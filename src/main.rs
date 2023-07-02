@@ -1,19 +1,38 @@
-use std::fs::read_to_string;
 use logos::Logos;
+use std::fs::read_to_string;
+mod dfa;
+mod nda;
 mod parser;
-mod nda_collapse;
 fn main() {
     let source = match read_to_string("calc.g") {
         Ok(s) => s,
-        Err(e) =>{ panic!("cannot read file!") }
+        Err(e) => {
+            panic!("cannot read file!")
+        }
     };
     let lex = parser::gTokens::lexer(source.as_str());
     let ast = match parser::parse(lex) {
         Ok(ast) => ast,
-        Err(err) => panic!("Error while Parsing: {:?}", err)
+        Err(err) => panic!("Error while Parsing: {:?}", err),
     };
-    //println!("Output: {:?}", ast);
+    println!("Output: {:?}", ast);
 
-    let dfa = nda_collapse::StateMaschine::new(ast.rules);
-    println!("terminals: {:?}, states: {:?}\n\nAutomaton: {:?}", dfa.terminals.len(), dfa.states.len(), dfa);
+    let mut dfa = nda::StateMaschine::new(ast.rules);
+    println!(
+        "terminals: {:?}, states: {:?}",
+        dfa.terminals.len(),
+        dfa.states.len()
+    );
+    for (i, term) in dfa.terminals.iter().enumerate() {
+        println!("{}. {:?}", i, term);
+    }
+    println!("");
+    for (i, state) in dfa.states.iter().enumerate() {
+        println!("{}. {:?}", i, state);
+    }
+    dfa.merge();
+    println!("");
+    for (i, state) in dfa.states.iter().enumerate() {
+        println!("{}. {:?}", i, state);
+    }
 }
