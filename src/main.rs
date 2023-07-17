@@ -17,14 +17,19 @@ fn main() {
     };
     println!("Output: {:?}", ast);
 
-    let mut dfa = nda::StateMaschine::new(ast.rules);
+    let mut dfa = nda::NDA::new(ast.rules);
     println!(
-        "terminals: {:?}, states: {:?}",
+        "terminals: {:?}, states: {:?}, reductends: {:?}",
         dfa.terminals.len(),
-        dfa.states.len()
+        dfa.states.len(),
+        dfa.reductions.len()
     );
     for (i, term) in dfa.terminals.iter().enumerate() {
         println!("{}. {:?}", i, term);
+    }
+    println!("");
+    for (i, reductend) in dfa.reductions.iter().enumerate() {
+        println!("{}. {:?}", i, reductend);
     }
     println!("");
     for (i, state) in dfa.states.iter().enumerate() {
