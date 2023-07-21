@@ -1,7 +1,11 @@
 use crate::parser::*;
 use std::collections::HashMap;
 use std::iter::{Iterator, Peekable};
+<<<<<<< HEAD
 se std::rc::Rc;
+=======
+use std::rc::Rc;
+>>>>>>> 41e6fc7 (NDA)
 
 type IdxState = usize;
 type IdxTerminal = usize;
@@ -37,7 +41,11 @@ pub enum Task {
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct State {
+<<<<<<< HEAD
     tasks: Vec<Task>,
+=======
+    pub tasks: Vec<Task>,
+>>>>>>> 41e6fc7 (NDA)
 }
 
 macro_rules! state {
