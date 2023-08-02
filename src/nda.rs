@@ -1,11 +1,7 @@
 use crate::parser::*;
 use std::collections::HashMap;
 use std::iter::{Iterator, Peekable};
-<<<<<<< HEAD
-se std::rc::Rc;
-=======
 use std::rc::Rc;
->>>>>>> 41e6fc7 (NDA)
 
 type IdxState = usize;
 type IdxTerminal = usize;
@@ -27,25 +23,20 @@ pub struct Reduction {
 pub struct NDA {
     pub terminals: Vec<Terminal>,
     pub states: Vec<State>,
-    start: u32,
+    pub start: u32,
     pub reductions: Vec<Reduction>,
 }
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Task {
     Match(IdxTerminal, IdxState),
     Jump(IdxState),
-    Reduce(IdxReduction, IdxState),
     Push(IdxState, IdxState),
-    Pop,
+    Pop(IdxReduction),
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct State {
-<<<<<<< HEAD
-    tasks: Vec<Task>,
-=======
     pub tasks: Vec<Task>,
->>>>>>> 41e6fc7 (NDA)
 }
 
 macro_rules! state {
@@ -102,7 +93,7 @@ impl NDA {
                     Component0::Rule(s) => 'find: {
                         for r in rules {
                             if &r.identifier == s {
-                                if iter.peek().is_none() {
+                                if false { //TODO: iter.peek().is_none() {
                                     let task = Task::Jump(self.fill_tree(r, rules, visited));
                                     state!(self, current).tasks.push(task);
                                 } else {
@@ -139,9 +130,7 @@ impl NDA {
             }
             self.reductions.push(Reduction{reduction_code: reductend.code.as_ref().unwrap().clone(),
                                            reduction_type: rule.export.as_ref().unwrap().clone()});
-            let next = self.new_state();
-            state!(self, current).tasks.push(Task::Reduce(self.reductions.len()-1, next));
-            state!(self, next).tasks.push(Task::Pop);
+            state!(self, current).tasks.push(Task::Pop(self.reductions.len()-1));
         }
         state
     }
@@ -189,7 +178,7 @@ impl NDA {
     ) {
         if !map.contains_key(&state) {
             let res = out.push(State { tasks: vec![] });
-            self.merge_state_collect(out.len() - 1, state, out, map, &mut true);
+            self.merge_state_collect(out.len() - 1, state, out, map);
         }
     }
     fn merge_state_collect(
@@ -198,17 +187,12 @@ impl NDA {
         from: usize,
         out: &mut Vec<State>,
         map: &mut HashMap<IdxState, IdxState>,
-        mut pop: &mut bool,
     ) {
         map.insert(from, state);
         for t in &self.states.get(from).unwrap().tasks {
             match t {
                 Task::Jump(idx) => {
-                    self.merge_state_collect(state, idx.clone(), out, map, pop);
-                }
-                t @ Task::Reduce(_, n) => {
-                    self.merge_state(n.clone(), out, map);
-                    out.get_mut(state).unwrap().tasks.push(t.clone());
+                    self.merge_state_collect(state, idx.clone(), out, map);
                 }
                 t @ Task::Match(_, n) => {
                     self.merge_state(n.clone(), out, map);
@@ -219,11 +203,8 @@ impl NDA {
                     self.merge_state(n.clone(), out, map);
                     out.get_mut(state).unwrap().tasks.push(t.clone());
                 }
-                Task::Pop => {
-                    if *pop {
-                        out.get_mut(state).unwrap().tasks.push(t.clone());
-                        *pop = false;
-                    }
+                Task::Pop(_) => {
+                    out.get_mut(state).unwrap().tasks.push(t.clone());
                 }
             };
         }
@@ -260,9 +241,6 @@ impl NDA {
                         *n = map.get(n).unwrap().clone();
                     }
                     Task::Match(_, n) => {
-                        *n = map.get(n).unwrap().clone();
-                    }
-                    Task::Reduce(_, n) => {
                         *n = map.get(n).unwrap().clone();
                     }
                     _ => {}
