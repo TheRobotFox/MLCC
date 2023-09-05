@@ -62,6 +62,21 @@ impl DFA {
             }
         }
     }
+    fn greedy_merge(aglet: &Aglet) -> usize {
+        
+    }
+    fn merge(self, knot: Knot) {
+        for (token, aglet) in knot {
+            // get common prefix
+            let prefix = Self::greedy_merge(aglet);
+            // apply prefix
+            let knots = Vec::new();
+            for (idx_state, stack_ops) in aglet {
+
+            }
+        }
+
+    }
     fn append(&mut self, state: IdxState, knot: Knot) {
         let mut state = self.states.get(state).unwrap();
         for (t, aglet) in knot {

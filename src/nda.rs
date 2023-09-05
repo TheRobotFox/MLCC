@@ -1,6 +1,10 @@
 use crate::parser::*;
 use std::collections::HashMap;
 use std::iter::{Iterator, Peekable};
+<<<<<<< HEAD
+=======
+use std::ops::Index;
+>>>>>>> main
 use std::rc::Rc;
 
 type IdxState = usize;
@@ -23,15 +27,24 @@ pub struct Reduction {
 pub struct NDA {
     pub terminals: Vec<Terminal>,
     pub states: Vec<State>,
+<<<<<<< HEAD
     pub start: u32,
+=======
+    pub start: IdxState,
+>>>>>>> main
     pub reductions: Vec<Reduction>,
 }
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Task {
     Match(IdxTerminal, IdxState),
     Jump(IdxState),
+<<<<<<< HEAD
     Push(IdxState, IdxState),
     Pop(IdxReduction),
+=======
+    Pop(IdxReduction),
+    Push(IdxState, IdxState),
+>>>>>>> main
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
@@ -93,7 +106,11 @@ impl NDA {
                     Component0::Rule(s) => 'find: {
                         for r in rules {
                             if &r.identifier == s {
+<<<<<<< HEAD
                                 if false { //TODO: iter.peek().is_none() {
+=======
+                                if false { // iter.peek().is_none() {
+>>>>>>> main
                                     let task = Task::Jump(self.fill_tree(r, rules, visited));
                                     state!(self, current).tasks.push(task);
                                 } else {
