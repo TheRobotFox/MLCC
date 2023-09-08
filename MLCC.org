@@ -1,0 +1,55 @@
+#+title: Mlcc
+
+* Two function setup
+fn RecMan()
+fn RecDo()
+
+* DFA Conversion
+** TODO Requirements
++ [X] Reduce <=> Pop
++ [-] Single Stack Ops after match
+
+* Seek Apply and Merge (SAM)
+** Automaton arch
+- Rule -> push + pop(reduce)
+- Term -> Match
+- No optimizations
+** Knots (UwU)
+- Tree Node branching to "Match"-Statements
++ Hashmap<IdxTerminal, Vec<(pos, tasks)>>
+** Seek
++ CollectMatches(pos) -> Vec<(pos, tasks)>
+** Evaluation
+|---------+-------------------+---------|
+|         | Greedy            | Lazy    |
+|---------+-------------------+---------|
+| Method  | Hash intersection | Pileing |
+| Results | Immediate         | Late    |
+|         | Single            |         |
+|---------+-------------------+---------|
+
+
+0. State { tasks: [Push(1, 4), Push(6, 4), Match(2, 7)] }
+1. State { tasks: [Match(1, 2)] }
+2. State { tasks: [Push(3, 0)] }
+3. State { tasks: [Pop(1)] }
+4. State { tasks: [Match(0, 5)] }
+5. State { tasks: [Pop(0)] }
+6. State { tasks: [Pop(2)] }
+7. State { tasks: [Push(8, 4)] }
+8. State { tasks: [Pop(3)] }
+
+* Topology
+** Structures
+*** Knot
+Map<nda_state , Map<token, aglet> == Knot>
+*** Aglet
+Vec<(nda_state, stack_ops)>
+** Algorithm
+ nda_state -[Seek]-> Knot
+ Knot -[each]-> alget -[greedy merge]-> stack_ops -[apply]-|
+ Continue until map hit + prefix unmerged
+ function operates on Vec<Knots> for merging <- NOOOO it will merge the knot!
+ Aglet -> Vec<(Knots, cdrStackOps)> -> Knot ( merge aglets if aglet goal is eqal but not stackOp -> grammer mistake )
+
+ :)
