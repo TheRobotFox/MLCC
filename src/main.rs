@@ -31,10 +31,10 @@ fn main() {
     for (i, reductend) in dfa.reductions.iter().enumerate() {
         println!("{}. {:?}", i, reductend);
     }
-    println!("");
-    for (i, state) in dfa.states.iter().enumerate() {
-        println!("{}. {:?}", i, state);
-    }
+    // println!("");
+    // for (i, state) in dfa.states.iter().enumerate() {
+    //     println!("{}. {:?}", i, state);
+    // }
     dfa.merge();
     println!("");
     for (i, state) in dfa.states.iter().enumerate() {

@@ -29,15 +29,15 @@ fn RecDo()
 |---------+-------------------+---------|
 
 
-0. State { tasks: [Push(1, 4), Push(6, 4), Match(2, 7)] }
-1. State { tasks: [Match(1, 2)] }
-2. State { tasks: [Push(3, 0)] }
-3. State { tasks: [Pop(1)] }
-4. State { tasks: [Match(0, 5)] }
-5. State { tasks: [Pop(0)] }
-6. State { tasks: [Pop(2)] }
-7. State { tasks: [Push(8, 4)] }
-8. State { tasks: [Pop(3)] }
+1. State { tasks: [Push(1, 4), Push(6, 4), Match(2, 7)] }
+2. State { tasks: [Match(1, 2)] }
+3. State { tasks: [Push(3, 0)] }
+4. State { tasks: [Pop(1)] }
+5. State { tasks: [Match(0, 5)] }
+6. State { tasks: [Pop(0)] }
+7. State { tasks: [Pop(2)] }
+8. State { tasks: [Push(8, 4)] }
+9. State { tasks: [Pop(3)] }
 
 * Topology
 ** Structures
@@ -53,3 +53,6 @@ Vec<(nda_state, stack_ops)>
  Aglet -> Vec<(Knots, cdrStackOps)> -> Knot ( merge aglets if aglet goal is eqal but not stackOp -> grammer mistake )
 
  :)
+** Probleme
+- was mit den übrigen prefixen?
+  -maybe möglichkeiten in state speichern...
