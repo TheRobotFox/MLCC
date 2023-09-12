@@ -1,7 +1,6 @@
 use logos::Logos;
 use std::fs::read_to_string;
-mod dfa;
-mod nda;
+mod lr;
 mod parser;
 fn main() {
     let source = match read_to_string("calc.g") {
