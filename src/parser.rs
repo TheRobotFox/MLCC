@@ -93,7 +93,7 @@ pub struct Components {
     pub components: Vec<Component>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Component0 {
     Rule(Rc<str>),
     Terminal(Rc<str>),
@@ -101,7 +101,7 @@ pub enum Component0 {
     Token,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Component {
     pub handle: Component0,
     pub var: Option<Rc<str>>,

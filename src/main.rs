@@ -3,7 +3,7 @@ use std::fs::read_to_string;
 mod lr;
 mod parser;
 fn main() {
-    let source = match read_to_string("calc.g") {
+    let source = match read_to_string("simple.g") {
         Ok(s) => s,
         Err(e) => {
             panic!("cannot read file!")
@@ -16,27 +16,29 @@ fn main() {
     };
     println!("Output: {:?}", ast);
 
-    let mut dfa = nda::NDA::new(ast.rules);
+    let lr = match lr::LR::generate(&ast.rules) {
+        Ok(lr)=>lr,
+        Err(errors) => {
+            println!("Error occured!");
+            errors.into_iter().for_each(|e| e.print(&ast.rules));
+            return;
+        }
+    };
     println!(
         "terminals: {:?}, states: {:?}, reductends: {:?}",
-        dfa.terminals.len(),
-        dfa.states.len(),
-        dfa.reductions.len()
+        lr.terminals.len(),
+        lr.states.len(),
+        lr.reductions.len()
     );
-    for (i, term) in dfa.terminals.iter().enumerate() {
+    for (i, term) in lr.terminals.iter().enumerate() {
         println!("{}. {:?}", i, term);
     }
     println!("");
-    for (i, reductend) in dfa.reductions.iter().enumerate() {
+    for (i, reductend) in lr.reductions.iter().enumerate() {
         println!("{}. {:?}", i, reductend);
     }
     println!("");
-    for (i, state) in dfa.states.iter().enumerate() {
-        println!("{}. {:?}", i, state);
-    }
-    dfa.merge();
-    println!("");
-    for (i, state) in dfa.states.iter().enumerate() {
-        println!("{}. {:?}", i, state);
+    for (i, state) in lr.states.iter().enumerate() {
+        println!("{}. {} {:?} {:?}", i, state.item, state.lookahead, state.goto);
     }
 }
