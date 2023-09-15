@@ -1,6 +1,5 @@
 use crate::parser::{self, Reductend, Component};
-use std::collections::HashSet;
-use std::fmt;
+use std::arch::x86_64::_MM_GET_ROUNDING_MODE;
 use std::{rc::Rc, collections::HashMap, fmt::Debug};
 use std::boxed::Box;
 type LRAction = isize; // negative -> reduce
@@ -8,6 +7,9 @@ type LRAction = isize; // negative -> reduce
                        // zero     -> null
 
 type IdxState = usize;
+type TokenSet = HashMap<Token, ReductendPath>;
+type TokenSetConflict = HashMap<Token, Vec<ReductendPath>>;
+
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum Token {
@@ -17,7 +19,7 @@ pub enum Token {
 
 #[derive(Debug)]
 pub struct LRState { // for each component of each REDUCTEND
-    pub item: String,
+    pub items: Vec<String>,
     pub lookahead: HashMap<Token, LRAction>, // Token
     pub goto: HashMap<Rc<str>, IdxState> // RUle name
 }
@@ -81,7 +83,7 @@ impl GrammarConflict {
 }
 
 #[derive(Debug, Clone)]
-enum ReductendPath {
+enum LRPosition {
     Pos(ReductendPos),
     Defer(ReductendPos, Box<ReductendPath>)
 }
@@ -92,6 +94,7 @@ pub struct LR{
     pub terminals: Vec<Token>, // index -> token
     pub reductions: Vec<Option<Reduction>>,
 }
+
 
 impl LR {
     fn item_write(mut string: String, c: &parser::Component) -> String {
@@ -113,7 +116,8 @@ impl LR {
         let mut i = 0;
         for c in &reductend.components.components {
             if i == component_index {
-                string += "• ";
+                string +=
+ "• ";
             }
             string = Self::item_write(string, &c);
             i+=1;
@@ -134,31 +138,42 @@ impl LR {
     }
 
     fn add_rule(self, rules: &Vec<parser::Rule>, rule: Rc<str>) {
-        let sets = match Self::get_set(rules, rule, 0) {
-            Ok(set) => set,
-            Err(map) => {
-                return Err(
-                    map.into_iter().map(|(k,v)| {
-                        GrammarConflict {
-                            position: (0, 0, 0),
-                            token: k,
-                            possible: v
-                        }
-                }).collect());
-            }
-        };
+        let r_rule = rules.iter().find(|e| e.identifier==rule).unwrap();
+        let max_components = r_rule.reductends.reductends.iter().max_by_key(|e| e.components.components.len())
+                                                                .unwrap().components.components.len();
+        for i in 0..max_components-1 {
 
-        for (t, p) in set {
-            let state = LRState {goto: HashMap::new(), item: LR::get_item()}
+            let set = match Self::get_set(rules, rule, 0) {
+                Ok(set) => set,
+                Err(map) => {
+                    return Err(
+                        map.into_iter().map(|(k,v)| {
+                            GrammarConflict {
+                                position: (0, 0, 0),
+                                token: k,
+                                possible: v
+                            }
+                    }).collect());
+                }
+            };
+
+            for (t, p) in set {
+                let state = LRState {goto: HashMap::new(),
+                                     items:
+
+                };
+            }
+
+
         }
     }
 
-    fn get_set(rules: &Vec<parser::Rule>, rule_name: Rc<str>, i: usize) -> Result<HashMap<Token, ReductendPath>, HashMap<Token, Vec<ReductendPath>>> {
+    fn get_set(rules: &Vec<parser::Rule>, rule_name: Rc<str>, index: usize) -> Result<TokenSet, TokenSetConflict> {
 
         println!("{}", rule_name);
         let rule = rules.iter().find(|e| e.identifier==rule_name).unwrap();
-        let mut map: HashMap<Token, ReductendPath> = HashMap::new();
-        let mut errors: HashMap<Token, Vec<ReductendPath>> = HashMap::new();
+        let mut map: TokenSet = HashMap::new();
+        let mut errors: TokenSetConflict = HashMap::new();
 
         let mut insert = |token: Token, path: ReductendPath| {
             match map.entry(token.clone()) {
@@ -172,38 +187,54 @@ impl LR {
             }
         };
 
-        for (ri, r) in rule.reductends.reductends.iter().enumerate() {
-            let c = r.components.components.get(i).unwrap();
-
-            match &c.handle {
-                parser::Component0::Regex(s) =>{
-                    insert(Token::Regex(s.clone()),
-                           ReductendPath::Pos(ReductendPos{rule: rule_name.clone(), reductend: ri}));
+        let mut merge = |result: Result<TokenSet, TokenSetConflict>| {
+            match result {
+                Ok(map) => {
+                    map.into_iter().for_each(|(k,v)| insert(k, v))
                 }
-                parser::Component0::Terminal(s) => {
-                    insert(Token::Terminal(s.clone()),
-                           ReductendPath::Pos(ReductendPos{rule: rule_name.clone(), reductend: ri}));
-                }
-                parser::Component0::Rule(r) => {
-                    if r != &rule_name {
-                        match Self::get_set(rules, r.clone(), 0) {
-                            Ok(map) => {
-                                map.into_iter().for_each(|(k,v)| insert(k, v))
-                            }
-                            Err(map) => { // optimize
-                                map.into_iter().for_each(|(k,list)| {
-                                    for v in list {
-                                        insert(k.clone(), v)
-                                    }
-                                });
-                            }
+                Err(map) => { // optimize
+                    map.into_iter().for_each(|(k,list)| {
+                        for v in list {
+                            insert(k.clone(), v)
                         }
+                    });
+                }
+            }
+        };
+
+        for (ri, r) in rule.reductends.reductends.iter().enumerate() {
+
+            for (i,c) in r.components.components.iter().enumerate() {
+                if i == index {break}
+
+                match c {
+                    parser::Component0::Rule(r) => {
+
                     }
                 }
-                parser::Component0::Token => {
+            }
 
+            if let Some(c) = r.components.components.get(index) {
+
+                match &c.handle {
+                    parser::Component0::Regex(s) =>{
+                        insert(Token::Regex(s.clone()),
+                            ReductendPath::Pos(ReductendPos{rule: rule_name.clone(), reductend: ri}));
+                    }
+                    parser::Component0::Terminal(s) => {
+                        insert(Token::Terminal(s.clone()),
+                            ReductendPath::Pos(ReductendPos{rule: rule_name.clone(), reductend: ri}));
+                    }
+                    parser::Component0::Rule(r) => {
+                        if r != &rule_name {
+                            merge(Self::get_set(rules, r.clone(), index));
+                        }
+                    }
+                    parser::Component0::Token => {
+                        panic!("Not implemented!")
+                    }
                 }
-            };
+            }
 
         }
 
