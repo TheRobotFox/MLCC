@@ -1,14 +1,11 @@
 use crate::parser::{self, Reductend, Component};
-use std::arch::x86_64::_MM_GET_ROUNDING_MODE;
-use std::{rc::Rc, collections::HashMap, fmt::Debug};
+use std::{rc::Rc, collections::{HashMap, HashSet}, fmt::Debug};
 use std::boxed::Box;
 type LRAction = isize; // negative -> reduce
                        // positive -> shift/goto
                        // zero     -> null
 
 type IdxState = usize;
-type TokenSet = HashMap<Token, ReductendPath>;
-type TokenSetConflict = HashMap<Token, Vec<ReductendPath>>;
 
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -18,7 +15,7 @@ pub enum Token {
 }
 
 #[derive(Debug)]
-pub struct LRState { // for each component of each REDUCTEND
+pub struct State { // for each component of each REDUCTEND
     pub items: Vec<String>,
     pub lookahead: HashMap<Token, LRAction>, // Token
     pub goto: HashMap<Rc<str>, IdxState> // RUle name
@@ -32,23 +29,34 @@ pub struct Reduction {
     pub nonterminal: usize
 }
 
-#[derive(Debug, Clone)]
-pub struct ReductendPos{
-    rule: Rc<str>,
-    reductend: usize
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Position {
+    pub rule: Rc<str>,
+    pub reductend: usize,
+    pub component: usize
 }
 
-impl ReductendPos {
-    fn get<'a>(self, rules: &'a Vec<parser::Rule>) -> (&'a parser::Rule, &'a parser::Reductend) {
-        let rule = rules.iter().find(|e| e.identifier==self.rule).unwrap();
+impl Position {
+    fn get_rule<'a>(self, rules: &'a Vec<parser::Rule>) -> &'a parser::Rule {
+        Self::rule(rules, self.rule)
+    }
+    fn get_rr<'a>(self, rules: &'a Vec<parser::Rule>) -> (&'a parser::Rule, &'a parser::Reductend) {
+        let rule = self.get_rule(rules);
         (rule, rule.reductends.reductends.get(self.reductend).unwrap())
+    }
+    fn get_component<'a>(self, rules: &'a Vec<parser::Rule>) -> &'a parser::Component {
+        let (_, reductend) = self.get_rr(rules);
+        reductend.components.components.get(self.component).unwrap()
+    }
+    fn rule<'a>(rules: &'a Vec<parser::Rule>, r: Rc<str>) -> &'a parser::Rule {
+        rules.iter().find(|e| e.identifier==r).unwrap()
     }
 }
 
 pub struct GrammarConflict {
     position: (usize, usize, usize),
     token: Token,
-    possible: Vec<ReductendPath>
+    possible: Vec<LRPath>
 }
 
 impl GrammarConflict {
@@ -82,15 +90,153 @@ impl GrammarConflict {
     }
 }
 
-#[derive(Debug, Clone)]
-enum LRPosition {
-    Pos(ReductendPos),
-    Defer(ReductendPos, Box<ReductendPath>)
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum Path {
+    Pos(Position),
+    Defer(Position, Box<Path>)
+}
+
+#[derive(Debug)]
+enum Tree<T> {
+    Leaf(T),
+    Branch(HashMap<Position, Tree<T>>)
+}
+
+struct Visitor<'a> {
+    used_tokens: HashSet<Token>,
+    rules: &'a Vec<parser::Rule>,
+    tree: Tree<Token>,
+    error_map: HashMap<Token, Tree<()>>
+}
+
+impl Visitor<'_> {
+    pub fn visit_at<'s>(&'s mut self, pos: Position) -> Result<&'s Tree<Token>, &'s HashMap<Token, Tree<()>>> {
+        let mut map = match self.tree {
+            Tree::Branch(map) => map,
+            _ => panic!("Invalid State!")
+        };
+
+        match Self::visit(self.rules,
+                    pos,
+                    &mut map,
+                    &mut self.used_tokens) {
+            Ok(_) => Ok(&self.tree),
+            Err(_) => {
+                // convert to error tree && return
+                todo!()
+            }
+        }
+    }
+    pub fn visit_rule<'s>(&'s mut self, rule: Rc<str>, component: usize) -> Result<&'s Tree<Token>, &'s HashMap<Token, Tree<()>>> {
+        let mut map = match self.tree {
+            Tree::Branch(map) => map,
+            _ => panic!("Invalid State!")
+        };
+
+        let rule_ref = Position::rule(self.rules, r);
+        let mut error = false;
+        for reductend in 0..rule_ref.reductends.reductends.len() {
+            if Self::visit(self.rules,
+                            Position{rule, reductend, component},
+                            &mut map,
+                            &mut self.used_tokens).is_err()
+            {error=true}
+        }
+        if error {
+            // convert to error tree && return
+            Err(&self.error_map)
+        } else {
+            Ok(&self.tree)
+        }
+    }
+    fn visit<'s>(
+        rules: &'s Vec<parser::Rule>,
+        pos: Position,
+        map: &mut HashMap<Position, Tree<Token>>,
+        used: &mut HashSet<Token>
+    ) -> Result<(), ()> {
+
+        println!("{}", pos.rule);
+
+        let mut error = false;
+
+        let insert = |e| {
+
+            let pos = Position {rule: pos.rule, reductend: ri, component: pos.component};
+            if let Some(prev) = map.insert(pos, e) {
+                panic!("Position should be empty! But found {:?}", prev);
+            }
+        };
+
+        let insert_token = |token: Token| {
+            if used.contains(&token) {error = true}
+            insert(Tree::Leaf(token))
+        };
+
+        let insert_rule = |rule: Rc<str>, component: usize| {
+            let reductends_count = Position::rule(rules, rule).reductends.reductends.len();
+            let map = HashMap::new();
+            for reductend in 0..reductends_count {
+                let pos = Position{rule, reductend, component};
+                Self::visit(
+                    rules,
+                    pos,
+                    &mut map,
+                    used
+                );
+            }
+            insert(Tree::Branch(map))
+        };
+
+        let rule = pos.get_rule(rules);
+        let reductend = rule.reductends.reductends.get(pos.reductend).unwrap();
+
+        let mut i = pos.component;
+        let iter = reductend.components.components.iter();
+
+        while let Some(c) = iter.next() {
+            if i==0 {break} else {i-=1;}
+
+            match c.handle {
+                parser::Component0::Rule(r) => insert_rule(r, i),
+                _ => {}
+            }
+        }
+
+        if let Some(c) = reductend.components.components.get(pos.component) {
+
+            match &c.handle {
+                parser::Component0::Regex(s) =>{
+                    insert_token(Token::Regex(s.clone()))
+                }
+                parser::Component0::Terminal(s) => {
+                    insert_token(Token::Terminal(s.clone()))
+                }
+                parser::Component0::Rule(r) => {
+                    if r != &pos.rule {
+                        insert_rule(r.clone(), 0)
+                    }
+                }
+                parser::Component0::Token => {
+                    panic!("Not implemented!")
+                }
+            }
+        }
+
+        if error {
+            Err(())
+        } else {
+            Ok(())
+        }
+    }
+    fn convert_to_erros(self) {
+        todo!()
+    }
 }
 
 #[derive(Debug)]
 pub struct LR{
-    pub states: Vec<LRState>, // index == state
+    pub states: Vec<State>, // index == state
     pub terminals: Vec<Token>, // index -> token
     pub reductions: Vec<Option<Reduction>>,
 }
@@ -107,17 +253,18 @@ impl LR {
         }.to_string().as_str();
         string
     }
-    pub fn get_item_reductend(rules: &Vec<parser::Rule>, reductend: ReductendPos, i: usize) -> String {
-        let (rule, reductend) = reductend.get(rules);
-        Self::get_item(&rule, &reductend, i)
+
+    pub fn get_item_pos(rules: &Vec<parser::Rule>, pos: LRPosition) -> String {
+        let (rule, reductend) = pos.get_rr(rules);
+        Self::get_item(&rule, &reductend, pos.component)
     }
+
     pub fn get_item(rule: &parser::Rule, reductend: &parser::Reductend, component_index: usize) -> String {
         let mut string = rule.identifier.to_string() + " ->";
         let mut i = 0;
         for c in &reductend.components.components {
             if i == component_index {
-                string +=
- "• ";
+                string += "• ";
             }
             string = Self::item_write(string, &c);
             i+=1;
@@ -143,7 +290,7 @@ impl LR {
                                                                 .unwrap().components.components.len();
         for i in 0..max_components-1 {
 
-            let set = match Self::get_set(rules, rule, 0) {
+            let tree = match Self::get_set(rules, rule, 0) {
                 Ok(set) => set,
                 Err(map) => {
                     return Err(
@@ -163,85 +310,7 @@ impl LR {
 
                 };
             }
-
-
         }
     }
 
-    fn get_set(rules: &Vec<parser::Rule>, rule_name: Rc<str>, index: usize) -> Result<TokenSet, TokenSetConflict> {
-
-        println!("{}", rule_name);
-        let rule = rules.iter().find(|e| e.identifier==rule_name).unwrap();
-        let mut map: TokenSet = HashMap::new();
-        let mut errors: TokenSetConflict = HashMap::new();
-
-        let mut insert = |token: Token, path: ReductendPath| {
-            match map.entry(token.clone()) {
-                std::collections::hash_map::Entry::Occupied(v) => {
-                    errors.entry(token).or_insert(vec![v.get().clone(), path.clone()])
-                                    .push(path);
-                },
-                std::collections::hash_map::Entry::Vacant(e) => {
-                    e.insert(path);
-                }
-            }
-        };
-
-        let mut merge = |result: Result<TokenSet, TokenSetConflict>| {
-            match result {
-                Ok(map) => {
-                    map.into_iter().for_each(|(k,v)| insert(k, v))
-                }
-                Err(map) => { // optimize
-                    map.into_iter().for_each(|(k,list)| {
-                        for v in list {
-                            insert(k.clone(), v)
-                        }
-                    });
-                }
-            }
-        };
-
-        for (ri, r) in rule.reductends.reductends.iter().enumerate() {
-
-            for (i,c) in r.components.components.iter().enumerate() {
-                if i == index {break}
-
-                match c {
-                    parser::Component0::Rule(r) => {
-
-                    }
-                }
-            }
-
-            if let Some(c) = r.components.components.get(index) {
-
-                match &c.handle {
-                    parser::Component0::Regex(s) =>{
-                        insert(Token::Regex(s.clone()),
-                            ReductendPath::Pos(ReductendPos{rule: rule_name.clone(), reductend: ri}));
-                    }
-                    parser::Component0::Terminal(s) => {
-                        insert(Token::Terminal(s.clone()),
-                            ReductendPath::Pos(ReductendPos{rule: rule_name.clone(), reductend: ri}));
-                    }
-                    parser::Component0::Rule(r) => {
-                        if r != &rule_name {
-                            merge(Self::get_set(rules, r.clone(), index));
-                        }
-                    }
-                    parser::Component0::Token => {
-                        panic!("Not implemented!")
-                    }
-                }
-            }
-
-        }
-
-        if errors.is_empty() {
-            return Ok(map);
-        } else {
-            return Err(errors);
-        }
-    }
 }

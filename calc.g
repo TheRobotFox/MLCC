@@ -1,14 +1,16 @@
-start: num=n "+" start=r { n+r }
-	 | num=n { n }
-	 -> u32;
+Goal: Sums;
 
-num: r"[0-9]+"=s { u32::from(s) }
+Sums: Sums=s + Products=p {s+p}
+    -> u32;
+
+Products: Products=p * Value=v {p*v}
+        | Value
+        -> u32;
+
+Value: r"[0-9]+"=s { u32::from(s) }
+     | r"[0-f]+"=s { hex::from(s) }
    -> u32;
 
-
-// 0. num -> "..."
-// 1. "+"
-// 2. [0]
 
 // expr: "(" expr=s ")" { expr }
 //     | num=s	     { s }
