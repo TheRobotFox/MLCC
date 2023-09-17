@@ -102,24 +102,75 @@ enum Tree<T> {
     Branch(HashMap<Position, Tree<T>>)
 }
 
+impl<T> Tree<T>
+where T: Clone
+{
+    pub fn get_gotos(&self) -> HashMap<Rc<str>, Vec<Position>> {
+        let mut map = HashMap::new();
+        Self::gotos(&mut map, self);
+        map
+    }
+    fn gotos(goto: &mut HashMap<Rc<str>, Vec<Position>>, tree: &Self) -> Option<Vec<Position>> {
+        match tree {
+            Self::Leaf(t) => None,
+            Self::Branch(map) => {
+                let mut list = Vec::new();
+                for (p, tree) in map {
+                    match Self::gotos(goto, tree) {
+                        Some(mut next) => {
+                            goto.entry(p.rule.clone()).and_modify(|l| l.append(&mut next)).or_insert(next);
+                        }
+                        None => {}
+                    }
+                    list.push(p.clone());
+                }
+                Some(list)
+            }
+        }
+    }
+    pub fn get_leafs(&self) -> Vec<(T, Position)> {
+        let mut list = Vec::new();
+        Self::leafs(&mut list, self);
+        list
+    }
+    fn leafs(list: &mut Vec<(T, Position)>, tree: &Self) -> Option<T> {
+        match tree {
+            Self::Leaf(t) => Some(t.clone()),
+            Self::Branch(map) => {
+                for (p, tree) in map {
+                    if let Some(t) = Self::leafs(list, tree) {
+                        list.push((t, p.clone()))
+                    }
+                }
+                None
+            }
+        }
+    }
+}
+
 struct Visitor<'a> {
     used_tokens: HashSet<Token>,
     rules: &'a Vec<parser::Rule>,
     tree: Tree<Token>,
-    error_map: HashMap<Token, Tree<()>>
+    error_map: HashMap<Token, Tree<()>>,
 }
 
 impl Visitor<'_> {
+    pub fn new<'s>(rules: &'s Vec<parser::Rule>) -> Visitor {
+        Visitor{used_tokens: HashSet::new(), rules, tree: Tree::Branch(HashMap::new()), error_map: HashMap::new(), gotos: HashMap::new()}
+    }
     pub fn visit_at<'s>(&'s mut self, pos: Position) -> Result<&'s Tree<Token>, &'s HashMap<Token, Tree<()>>> {
         let mut map = match self.tree {
             Tree::Branch(map) => map,
             _ => panic!("Invalid State!")
         };
 
-        match Self::visit(self.rules,
-                    pos,
-                    &mut map,
-                    &mut self.used_tokens) {
+        match Self::visit(
+            self.rules,
+            pos,
+            &mut map,
+            &mut self.used_tokens
+        ) {
             Ok(_) => Ok(&self.tree),
             Err(_) => {
                 // convert to error tree && return
@@ -127,6 +178,7 @@ impl Visitor<'_> {
             }
         }
     }
+
     pub fn visit_rule<'s>(&'s mut self, rule: Rc<str>, component: usize) -> Result<&'s Tree<Token>, &'s HashMap<Token, Tree<()>>> {
         let mut map = match self.tree {
             Tree::Branch(map) => map,
@@ -160,9 +212,11 @@ impl Visitor<'_> {
 
         let mut error = false;
 
+        let rule = pos.get_rule(rules);
+        let reductend = rule.reductends.reductends.get(pos.reductend).unwrap();
+
         let insert = |e| {
 
-            let pos = Position {rule: pos.rule, reductend: ri, component: pos.component};
             if let Some(prev) = map.insert(pos, e) {
                 panic!("Position should be empty! But found {:?}", prev);
             }
@@ -187,9 +241,6 @@ impl Visitor<'_> {
             }
             insert(Tree::Branch(map))
         };
-
-        let rule = pos.get_rule(rules);
-        let reductend = rule.reductends.reductends.get(pos.reductend).unwrap();
 
         let mut i = pos.component;
         let iter = reductend.components.components.iter();
@@ -229,8 +280,8 @@ impl Visitor<'_> {
             Ok(())
         }
     }
-    fn convert_to_erros(self) {
-        todo!()
+    fn convert_to_errors(token: &mut Token, map: &mut HashMap<Token, Tree<()>>) {
+
     }
 }
 
@@ -238,7 +289,7 @@ impl Visitor<'_> {
 pub struct LR{
     pub states: Vec<State>, // index == state
     pub terminals: Vec<Token>, // index -> token
-    pub reductions: Vec<Option<Reduction>>,
+    pub reductions: Vec<Option<Reduction>>
 }
 
 
@@ -279,19 +330,20 @@ impl LR {
     pub fn generate(rules: &Vec<parser::Rule>) -> Result<LR, Vec<GrammarConflict>> {
 
         let mut lr = LR {states: vec![], terminals: vec![], reductions: vec![]};
+        let state_map = HashMap::new();
 
-        lr.add_rule(rules, "start".into());
+        lr.add_rule(rules, state_map, "start".into());
         Ok(lr)
     }
 
-    fn add_rule(self, rules: &Vec<parser::Rule>, rule: Rc<str>) {
+    fn add_rule(self, rules: &Vec<parser::Rule>, state_map: HashMap<Vec<Position>, Option<IdxState>>, rule: Rc<str>) {
         let r_rule = rules.iter().find(|e| e.identifier==rule).unwrap();
         let max_components = r_rule.reductends.reductends.iter().max_by_key(|e| e.components.components.len())
                                                                 .unwrap().components.components.len();
         for i in 0..max_components-1 {
-
-            let tree = match Self::get_set(rules, rule, 0) {
-                Ok(set) => set,
+            let visior = Visitor::new(rules);
+            let tree = match visior.visit_rule(rule, i) {
+                Ok(tree) => tree,
                 Err(map) => {
                     return Err(
                         map.into_iter().map(|(k,v)| {
@@ -304,12 +356,16 @@ impl LR {
                 }
             };
 
-            for (t, p) in set {
-                let state = LRState {goto: HashMap::new(),
-                                     items:
+            let next = tree.get_leafs();
+            let goto = tree.get_gotos();
+            println!("next: {:?}", next);
+            println!("goto: {:?}", goto);
+            // for (t, p) in next {
+            //     let state = LRState {goto: HashMap::new(),
+            //                          items:
 
-                };
-            }
+            //     };
+            // }
         }
     }
 
