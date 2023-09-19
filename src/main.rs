@@ -39,6 +39,6 @@ fn main() {
     }
     println!("");
     for (i, state) in lr.states.iter().enumerate() {
-        println!("{}. {} {:?} {:?}", i, state.item, state.lookahead, state.goto);
+        println!("{}. {:?} {:?} {:?}", i, state.items, state.lookahead, state.goto);
     }
 }
