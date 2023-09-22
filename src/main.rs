@@ -16,7 +16,7 @@ fn main() {
     };
     println!("Output: {:?}", ast);
 
-    let lr = match lr::LR::generate(&ast.rules) {
+    let lr = match lr::LR::new(&ast.rules) {
         Ok(lr)=>lr,
         Err(errors) => {
             println!("Error occured!");
@@ -25,7 +25,7 @@ fn main() {
         }
     };
     println!(
-        "terminals: {:?}, states: {:?}, reductends: {:?}",
+        "terminals: {:?}, states: {:?}, reductors: {:?}",
         lr.terminals.len(),
         lr.states.len(),
         lr.reductions.len()
@@ -41,4 +41,6 @@ fn main() {
     for (i, state) in lr.states.iter().enumerate() {
         println!("{}. {:?} {:?} {:?}", i, state.items, state.lookahead, state.goto);
     }
+
+    println!("start: {}", lr.start);
 }
