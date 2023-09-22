@@ -7,21 +7,21 @@ type IdxState = usize;
 
 #[derive(Debug, Clone)]
 pub enum Action {
-    Shift(BTreeSet<Position>),
+    Shift(usize),
     Reduce(usize),
-    Done,
-    Error
+    Halt
 }
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum Token {
     Terminal(Rc<str>),
-    Regex(Rc<str>)
+    Regex(Rc<str>),
+    EOF
 }
 
 #[derive(Debug)]
 pub struct State { // for each component of each REDUCTEND
     pub items: Vec<String>,
-    pub lookahead: HashMap<Token, Action>, // Token
+    pub lookahead: HashMap<usize, Action>, // Token
     pub goto: HashMap<Rc<str>, BTreeSet<Position>> // RUle name
 }
 
@@ -538,19 +538,67 @@ impl Visitor<'_> {
     }
 }
 
-#[derive(Debug)]
-pub struct LR<'a>{
-    pub start: usize,
-    pub states: Vec<State>, // index == state
-    pub terminals: Vec<Token>, // index -> token
-    pub nonterminals: Vec<Rc<str>>,
-    pub reductions: Vec<Reduction>,
-    state_map: HashMap<BTreeSet<Position>, Option<usize>>,
-    terminal_map: HashMap<Token, usize>,
-    nonterminal_map: HashMap<Rc<str>, usize>,
-    reduction_map: HashMap<Reduction, usize>,
-    rules: &'a Vec<parser::Rule>
+macro_rules! make_lr_vecmaps {
+    {$($name: ident: $type:ty),*} => {
+        struct LRMaps{
+            $($name: HashMap<$type, usize>,)*
+        }
+        impl LRMaps {
+            fn new() -> Self {
+                Self{
+                    $($name: HashMap::new(),)*
+                }
+            }
+        }
+        pub struct LR<'a>{
+            pub start: usize,
+            pub states: Vec<State>, // index == state
+            state_map: HashMap<BTreeSet<Position>, usize>,
+            $(pub $name: Vec<$type>,)*
+            maps: LRMaps,
+            rules: &'a Vec<parser::Rule>
+        }
+        impl<'a> LR<'a> {
+            pub fn new(rules: &'a Vec<parser::Rule>) -> Result<LR<'a>, Vec<GrammarConflict>> {
+
+                let mut lr = LR {
+                    start: 0,
+                    states: vec![],
+                    state_map: HashMap::new(),
+                    $($name: vec![],)*
+                    maps: LRMaps::new(),
+                    rules
+                };
+
+                lr.terminals.push(Token::EOF);
+
+                let location = lr.get_location("start");
+                let states = vec![];
+                lr.add_state(&location, &mut states);
+                lr.states = states;
+                lr.start = lr.state_map.get(&location).unwrap().unwrap();
+                Ok(lr)
+            }
+        }
+    }
 }
+
+make_lr_vecmaps!{
+    reductions: Reduction,
+    terminals: Token,
+    nonterminals: Rc<str>
+}
+
+macro_rules! vecmap_insert {
+    ($self:ident, $name:ident, $e:expr) => {
+        *$self.maps.$name.entry($e.clone())
+                             .or_insert_with(||{
+                                $self.$name.push($e);
+                                $self.$name.len()-1
+                            })
+    }
+}
+
 
 
 impl<'a> LR<'a> {
@@ -587,36 +635,18 @@ impl<'a> LR<'a> {
         string
     }
 
-    pub fn new(rules: &'a Vec<parser::Rule>) -> Result<LR<'a>, Vec<GrammarConflict>> {
-
-        let mut lr = LR {
-            start: 0,
-            states: vec![],
-            terminals: vec![],
-            nonterminals: vec![],
-            reductions: vec![],
-            state_map: HashMap::new(),
-            terminal_map: HashMap::new(),
-            nonterminal_map: HashMap::new(),
-            reduction_map: HashMap::new(),
-            rules
-        };
-
-        let location = lr.get_location("start");
-        lr.add_state(&location);
-        lr.start = lr.state_map.get(&location).unwrap().unwrap();
-        Ok(lr)
-    }
     fn get_location(&self, rule: &str) -> BTreeSet<Position> {
         (0..Position::rule(self.rules, &rule.into()).reductends.reductends.len())
             .map(|reductend| Position{rule: rule.into(), reductend, component: 0}).collect()
     }
 
-    fn add_state(&mut self, items: &BTreeSet<Position>) {
+    fn add_state(&mut self, items: &BTreeSet<Position>, states: &mut Vec<State>) {
         let mut visitor = Visitor::new(self.rules);
-        self.make_state(&mut visitor, items);
+        self.make_state(&mut visitor, items, states);
     }
-    fn make_state(&mut self, visitor: &mut Visitor, items: &BTreeSet<Position>) {
+
+
+    fn make_state(&mut self, visitor: &mut Visitor, items: &BTreeSet<Position>, states: &mut Vec<State>) {
 
 
         for p in items.iter() {
@@ -650,18 +680,23 @@ impl<'a> LR<'a> {
         let next = visitor.modules.next.get();
         let goto = visitor.modules.gotos.get();
 
-        println!("{:?}: {:?}", items, goto);
-
         // mark state as handled
+        states.push(State{
+
+        })
         self.state_map.insert(items.clone(), None);
 
         // build Action map
         let mut lookahead = HashMap::new();
 
-        for (t, bt) in next.into_iter() {
+        for (token, bt) in next.into_iter() {
+            let t = vecmap_insert!(self, terminals, token);
             self.next_state(visitor.clone(), &bt);
             lookahead.insert(t, Action::Shift(bt));
         }
+
+        let mut self_reductions = HashSet::new();
+
         for (r, g) in goto.iter() {
             let mut v = visitor.clone();
             v.modules.next.reset();
@@ -675,11 +710,7 @@ impl<'a> LR<'a> {
             let components = &reductend.components.components;
 
             // insert nonterminal
-            let nonterminal = *self.nonterminal_map.entry(r.clone())
-                                .or_insert_with(||{
-                                    self.nonterminals.push(r.clone());
-                                    self.nonterminals.len()-1
-                                });
+            let nonterminal = vecmap_insert!(self, nonterminals, r.clone());
 
             // decide reduction type
             let task = {
@@ -701,19 +732,36 @@ impl<'a> LR<'a> {
             };
 
             // insert Reduction
-            let r = Reduction {task, nonterminal};
-            let reduction = *self.reduction_map.entry(r.clone())
-                                              .or_insert_with(||{
-                                                  self.reductions.push(r);
-                                                  self.reductions.len()-1
-                                              });
+            let rd = Reduction {task, nonterminal};
+
+            let reduction = vecmap_insert!(self, reductions, rd.clone());
 
 
             let next = v.modules.next.get();
-            for (t, _) in next {
-                lookahead.insert(t, Action::Reduce(reduction));
-            }
+            for (token, _) in next {
 
+                let t = vecmap_insert!(self, terminals, token.clone());
+
+                if let Some(prev) = lookahead.insert(t, Action::Reduce(reduction)) {
+                    panic!("token has multiple paths. This ain't no fucking GLR! {:?}", prev);
+                }
+            }
+            // collect reductends for current rule
+            for e in items {
+                if &e.rule == r {
+                    self_reductions.insert(reduction);
+                }
+            }
+        }
+
+        // EOF reduction
+        if let Some(reduction) = self_reductions.iter().next() {
+            if self_reductions.len()>1 {
+                panic!("EOF reductions is unambiguous: {:?}", self_reductions);
+            }
+                lookahead.insert(0, Action::Reduce(*reduction));
+        } else {
+                lookahead.insert(0, Action::Halt);
         }
 
         // create goto map

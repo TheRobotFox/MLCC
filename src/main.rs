@@ -1,6 +1,7 @@
 use logos::Logos;
 use std::fs::read_to_string;
 mod lr;
+mod generate;
 mod parser;
 fn main() {
     let source = match read_to_string("simple.g") {
