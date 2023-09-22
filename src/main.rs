@@ -39,7 +39,7 @@ fn main() {
     }
     println!("");
     for (i, state) in lr.states.iter().enumerate() {
-        println!("{}. {:?} {:?} {:?}", i, state.items, state.lookahead, state.goto);
+        println!("{}. {} {:?} {:?}", i, state.items.clone().into_iter().fold(String::from("[ "), |s,a|{s+(a +" | ").as_str()})+"]", state.lookahead, state.goto);
     }
 
     println!("start: {}", lr.start);

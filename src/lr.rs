@@ -353,38 +353,47 @@ impl CollectErrors {
  * maps reductions to states
  */
 #[derive(Clone)]
-struct CollectGotos {
-    map: HashMap<Rc<str>, BTreeSet<Position>>,
+struct CollectReductions {
+    map: HashMap<Rc<str>, Goto>,
     current: Vec<Position>
 }
+#[derive(Debug, Clone)]
+struct Goto{
+    location: BTreeSet<Position>,
+    from: Position
+}
 
-impl VisitModule for CollectGotos {
+impl VisitModule for CollectReductions {
     fn new() -> Self where Self: Sized {
         Self{map: HashMap::new(), current: vec![]}
     }
-    fn on_rule(&mut self, position: Position, _: Rc<str>, _: usize) -> Result<(),String> {
+    fn on_rule(&mut self, position: Position, _rule: Rc<str>, _reductend: usize) -> Result<(),String> {
         self.current.push(position);
         Ok(())
     }
     fn after_rule(&mut self, end: Position) -> Result<(),String> {
-        let set = self.map.entry(end.rule).or_insert(BTreeSet::new());
+        let set = self.map.entry(end.rule.clone()).or_insert(Goto{
+            location: BTreeSet::new(),
+            from: end
+        });
+
         if let Some(up) = self.current.pop() {
-            set.insert(Position{rule: up.rule, reductend: up.reductend, component: up.component+1});
+            set.location.insert(Position{rule: up.rule, reductend: up.reductend, component: up.component+1});
         } else {
             // maybe done!
-            set.insert(Position{rule: "_EOF".into(), reductend: 0, component: 0});
+            set.location.insert(Position{rule: "_EOF".into(), reductend: 0, component: 0});
             // else
             // Err("BOS: No Position to return".into())
         }
         Ok(())
     }
 }
-impl CollectGotos {
-    fn get(&self) -> HashMap<Rc<str>, BTreeSet<Position>> {
+impl CollectReductions {
+    fn get(&self) -> HashMap<Rc<str>, Goto> {
         self.map.clone()
     }
-    fn reduce(&mut self, rule: Rc<str>) {
-        self.map.remove(&rule);
+    fn reduce(&mut self, rule: &Rc<str>) {
+        self.map.remove(rule);
     }
 }
 
@@ -420,7 +429,7 @@ macro_rules! install_modules {
 
 install_modules!(
     next: CollectNext,
-    gotos: CollectGotos,
+    gotos: CollectReductions,
     // used: CollectTokens,
     error: CollectErrors
 );
@@ -609,12 +618,13 @@ impl<'a> LR<'a> {
     }
     fn make_state(&mut self, visitor: &mut Visitor, items: &BTreeSet<Position>) {
 
-        // if state already implemented
-        if self.state_map.contains_key(items) {return;}
 
         for p in items.iter() {
             let _ = visitor.visit_at(p);
         }
+
+        // if state already implemented
+        if self.state_map.contains_key(items) {return;}
 
         match visitor.error() {
             Ok(()) => {},
@@ -640,6 +650,8 @@ impl<'a> LR<'a> {
         let next = visitor.modules.next.get();
         let goto = visitor.modules.gotos.get();
 
+        println!("{:?}: {:?}", items, goto);
+
         // mark state as handled
         self.state_map.insert(items.clone(), None);
 
@@ -650,15 +662,16 @@ impl<'a> LR<'a> {
             self.next_state(visitor.clone(), &bt);
             lookahead.insert(t, Action::Shift(bt));
         }
-        for (r, bt) in goto.iter() {
+        for (r, g) in goto.iter() {
             let mut v = visitor.clone();
             v.modules.next.reset();
-            self.make_state(&mut v, bt);
+            v.modules.gotos.reduce(r);
+            self.make_state(&mut v, &g.location);
 
-            if bt.len() != 1 {
-                panic!("Reduce/Reduce conflict! {}", bt.len());
+            if g.location.len() != 1 {
+                panic!("Reduce/Reduce conflict! {}", g.location.len());
             }
-            let (rule, reductend) = bt.first().unwrap().get_rr(self.rules);
+            let (rule, reductend) = g.from.get_rr(self.rules);
             let components = &reductend.components.components;
 
             // insert nonterminal
@@ -703,9 +716,15 @@ impl<'a> LR<'a> {
 
         }
 
+        // create goto map
+        let goto = goto.into_iter().map(|(k,g)| {
+            //let idx = self.state_map.get(&g.location).unwrap().unwrap();
+            (k, g.location)
+        }).collect();
+
         // push state and set pointer
         self.states.push(State{
-            goto: goto.clone(),
+            goto,
             items: items.iter().map(|e| LR::get_item_pos(self.rules, e.clone())).collect(),
             lookahead
         });
