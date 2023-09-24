@@ -1,8 +1,6 @@
 use crate::parser;
-use std::{rc::Rc, collections::{HashMap, HashSet, BTreeSet}};
+use std::{rc::Rc, collections::{HashMap, HashSet, BTreeSet, BTreeMap}};
 use std::boxed::Box;
-
-type IdxState = usize;
 
 
 #[derive(Debug, Clone)]
@@ -22,7 +20,7 @@ pub enum Token {
 pub struct State { // for each component of each REDUCTEND
     pub items: Vec<String>,
     pub lookahead: HashMap<usize, Action>, // Token
-    pub goto: HashMap<Rc<str>, BTreeSet<Position>> // RUle name
+    pub goto: HashMap<usize, usize> // reduction -> state
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -34,8 +32,14 @@ pub struct Reduction {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ReductionTask{
     pub code: Rc<str>,
-    pub args: Vec<Option<Rc<str>>>,
+    pub args: Vec<Option<Arg>>,
     pub return_type: Rc<str>,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct Arg {
+    pub identifier: Rc<str>,
+    pub arg_type: Rc<str>
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -59,28 +63,6 @@ impl Position {
         reductend.components.components.get(self.component).unwrap()
     }
     fn rule<'a>(rules: &'a Vec<parser::Rule>, r: &Rc<str>) -> &'a parser::Rule {
-
-        // let eof_rule: &'static parser::Rule = &parser::Rule{export: None,
-        //                                             identifier: "_EOF".into(),
-        //                               reductends: parser::Reductends{
-        //                                   reductends: vec![
-        //                                       parser::Reductend{
-        //                                           code: None,
-        //                                           components: parser::Components{
-        //                                               components: vec![
-        //                                                   parser::Component{
-        //                                                       handle: parser::Component0::Terminal("eof".into()),
-        //                                                       var: None
-        //                                                   }
-        //                                               ]
-        //                                           }
-        //                                       }
-        //                                   ]
-        //                               }};
-
-        if r.eq(&"_EOF".into()) {
-            panic!("Done!")
-        }
         rules.iter().find(|e| &e.identifier==r).unwrap()
     }
 }
@@ -215,6 +197,8 @@ where T: Clone
 trait VisitModule {
     fn on_token(&mut self, _position: Position, _token: &Token) -> Result<(), String> {Ok(())}
     fn on_rule(&mut self, _position: Position, _rule: Rc<str>, _component: usize) -> Result<(),String> {Ok(())}
+    fn push(&mut self) {}
+    fn pop(&mut self) {}
     fn after_rule(&mut self, _position: Position) -> Result<(),String> {Ok(())}
     fn boxed() -> Box<dyn VisitModule> where Self: 'static +Sized {
         Box::new(Self::new())
@@ -354,10 +338,11 @@ impl CollectErrors {
  */
 #[derive(Clone)]
 struct CollectReductions {
-    map: HashMap<Rc<str>, Goto>,
-    current: Vec<Position>
+    map: BTreeMap<Rc<str>, Goto>,
+    current: Vec<Position>,
+    stash: Vec<usize>
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct Goto{
     location: BTreeSet<Position>,
     from: Position
@@ -365,23 +350,34 @@ struct Goto{
 
 impl VisitModule for CollectReductions {
     fn new() -> Self where Self: Sized {
-        Self{map: HashMap::new(), current: vec![]}
+        Self{map: BTreeMap::new(), current: vec![], stash: vec![]}
     }
     fn on_rule(&mut self, position: Position, _rule: Rc<str>, _reductend: usize) -> Result<(),String> {
-        self.current.push(position);
+        self.current.push(position.clone());
+        println!("i: {:?} -> {}:{} | {:?}", position.clone(), _rule, _reductend, self.current);
         Ok(())
     }
+    fn push(&mut self) {
+        self.stash.push(self.current.len());
+    }
+    fn pop(&mut self) {
+        self.current.truncate(self.stash.pop().unwrap());
+    }
+    // fn on_reject(&mut self, position: Position) -> Result<(),String> {
+    //     self.after_rule(position)
+    // }
     fn after_rule(&mut self, end: Position) -> Result<(),String> {
         let set = self.map.entry(end.rule.clone()).or_insert(Goto{
             location: BTreeSet::new(),
-            from: end
+            from: end.clone()
         });
 
         if let Some(up) = self.current.pop() {
+            println!("o: {:?}->{:?}", end, up);
             set.location.insert(Position{rule: up.rule, reductend: up.reductend, component: up.component+1});
         } else {
             // maybe done!
-            set.location.insert(Position{rule: "_EOF".into(), reductend: 0, component: 0});
+            //set.location.insert(Position{rule: "_EOF".into(), reductend: 0, component: 0});
             // else
             // Err("BOS: No Position to return".into())
         }
@@ -389,7 +385,7 @@ impl VisitModule for CollectReductions {
     }
 }
 impl CollectReductions {
-    fn get(&self) -> HashMap<Rc<str>, Goto> {
+    fn get(&self) -> BTreeMap<Rc<str>, Goto> {
         self.map.clone()
     }
     fn reduce(&mut self, rule: &Rc<str>) {
@@ -415,9 +411,6 @@ macro_rules! install_modules {
                     $($n: <$t>::new(),)*
                 }
             }
-            fn iter(&'a self) -> [&dyn VisitModule; Self::_s([$(_null!($n),)*])] {
-                [$(&self.$n,)*]
-            }
             fn iter_mut(&'a mut self) -> [&mut dyn VisitModule; Self::_s([$(_null!($n),)*])] {
                 [$(&mut self.$n,)*]
             }
@@ -429,9 +422,9 @@ macro_rules! install_modules {
 
 install_modules!(
     next: CollectNext,
-    gotos: CollectReductions,
+    gotos: CollectReductions
     // used: CollectTokens,
-    error: CollectErrors
+    //error: CollectErrors
 );
 
 #[derive(Clone)]
@@ -449,23 +442,24 @@ impl Visitor<'_> {
     pub fn error(&self) -> Result<(),()> {
         self.error
     }
-    pub fn visit_rule(&mut self, rule: Rc<str>, component: usize) -> Result<(), ()> {
 
-        let rule_ref = Position::rule(self.rules, &rule);
-        let mut pos = Position{rule, reductend: 0, component};
-        for reductend in 0..rule_ref.reductends.reductends.len() {
-            pos.reductend = reductend;
-            let _ = self.visit(&pos, &mut HashSet::new());
-        }
-        self.error()
-    }
-
+    // pub fn visit_all(&mut self, items: &BTreeSet<Position>) -> Result<(), ()>{
+    //     let mut visited = HashSet::new();
+    //     for p in items {
+    //         for m in self.modules.iter_mut() {
+    //             m.push();
+    //         }
+    //         self.visit(p, &mut visited);
+    //         // self.visit_at(p);
+    //     }
+    //     self.error()
+    // }
     pub fn visit_at(&mut self, pos: &Position) -> Result<(), ()>{
         self.visit(pos, &mut HashSet::new());
         self.error()
     }
 
-    fn visit(&mut self, pos: &Position, visited: &mut HashSet<Position>) {
+    fn visit(&mut self, pos: &Position, visited: &mut HashSet<(Rc<str>, Option<Position>)>) {
         let rule = pos.get_rule(self.rules);
         let reductend = rule.reductends.reductends.get(pos.reductend).unwrap();
 
@@ -501,11 +495,20 @@ impl Visitor<'_> {
             }
         }
     }
-    fn insert_rule(&mut self, position: &Position, rule: Rc<str>, component: usize, visited: &mut HashSet<Position>){
+    fn insert_rule(&mut self, position: &Position, rule: Rc<str>, component: usize, visited: &mut HashSet<(Rc<str>, Option<Position>)>){
 
         let rule_ref = Position::rule(self.rules, &rule);
         let reductends_count = rule_ref.reductends.reductends.len();
 
+        let prev = self.modules.gotos.current.last().cloned();
+        if visited.contains(&(rule.clone(), prev.clone())) {
+            for m in self.modules.iter_mut() {
+                m.pop();
+            }
+            return;
+        }
+
+        visited.insert((rule.clone(), prev.clone()));
         for m in self.modules.iter_mut() {
             match m.on_rule(position.clone(), rule.clone(), component) {
                 Ok(()) => {},
@@ -518,10 +521,10 @@ impl Visitor<'_> {
 
         for reductend in 0..reductends_count {
             let pos = Position{rule: rule.clone(), reductend, component};
-
-            if visited.contains(&pos) {continue}
-            visited.insert(pos.clone());
-
+            // if visited.contains(&(pos.clone(), prev.clone())) {
+            //     continue;
+            // }
+            // visited.insert((pos.clone(), prev.clone()));
             let _ = self.visit(&pos, visited);
         }
     }
@@ -536,6 +539,10 @@ impl Visitor<'_> {
             }
         }
     }
+}
+
+struct VisitorList<'a>{
+    visitors: Vec<Visitor<'a>>
 }
 
 macro_rules! make_lr_vecmaps {
@@ -553,7 +560,8 @@ macro_rules! make_lr_vecmaps {
         pub struct LR<'a>{
             pub start: usize,
             pub states: Vec<State>, // index == state
-            state_map: HashMap<BTreeSet<Position>, usize>,
+            pub export: Rc<str>,
+            state_map: HashMap<(BTreeSet<Position>, BTreeMap<Rc<str>, Goto>), usize>,
             $(pub $name: Vec<$type>,)*
             maps: LRMaps,
             rules: &'a Vec<parser::Rule>
@@ -563,6 +571,7 @@ macro_rules! make_lr_vecmaps {
 
                 let mut lr = LR {
                     start: 0,
+                    export: "".into(),
                     states: vec![],
                     state_map: HashMap::new(),
                     $($name: vec![],)*
@@ -573,10 +582,10 @@ macro_rules! make_lr_vecmaps {
                 lr.terminals.push(Token::EOF);
 
                 let location = lr.get_location("start");
-                let states = vec![];
-                lr.add_state(&location, &mut states);
-                lr.states = states;
-                lr.start = lr.state_map.get(&location).unwrap().unwrap();
+                lr.add_state(&location);
+
+                lr.start = *lr.state_map.get(&(location, BTreeMap::new())).unwrap();
+                lr.export = Position::rule(rules, &"start".into()).export.clone().unwrap();
                 Ok(lr)
             }
         }
@@ -640,21 +649,32 @@ impl<'a> LR<'a> {
             .map(|reductend| Position{rule: rule.into(), reductend, component: 0}).collect()
     }
 
-    fn add_state(&mut self, items: &BTreeSet<Position>, states: &mut Vec<State>) {
+    fn add_state(&mut self, items: &BTreeSet<Position>) {
         let mut visitor = Visitor::new(self.rules);
-        self.make_state(&mut visitor, items, states);
+        self.make_state(&mut visitor, items);
     }
 
 
-    fn make_state(&mut self, visitor: &mut Visitor, items: &BTreeSet<Position>, states: &mut Vec<State>) {
+    fn make_state(&mut self, visitor: &mut Visitor, items: &BTreeSet<Position>) -> usize {
+
+        println!("items: {:?}", items);
+        let _ = visitor.visit_all(items);
 
 
-        for p in items.iter() {
-            let _ = visitor.visit_at(p);
-        }
+        let next_map = visitor.modules.next.get();
+        let goto_map = visitor.modules.gotos.get();
+        println!("next: {:?}", visitor.modules.next.get());
+        println!("goto: {:?}", visitor.modules.gotos.get());
 
+        // base case
         // if state already implemented
-        if self.state_map.contains_key(items) {return;}
+        match self.state_map.get(&(items.clone(), goto_map.clone())) {
+            Some(idx) => {
+            println!("present: {:?}->{}", items, idx);
+                return *idx;
+            }
+            None => {}
+        }
 
         match visitor.error() {
             Ok(()) => {},
@@ -677,31 +697,35 @@ impl<'a> LR<'a> {
             }
         };
 
-        let next = visitor.modules.next.get();
-        let goto = visitor.modules.gotos.get();
+        // revserve position with dummy
+        self.states.push(State{
+            goto: HashMap::new(),
+            items: vec![],
+            lookahead: HashMap::new()
+        });
+        let idx = self.states.len()-1;
 
-        // mark state as handled
-        states.push(State{
-
-        })
-        self.state_map.insert(items.clone(), None);
+        self.state_map.insert((items.clone(), goto_map.clone()), idx);
 
         // build Action map
         let mut lookahead = HashMap::new();
 
-        for (token, bt) in next.into_iter() {
+        for (token, bt) in next_map.into_iter() {
             let t = vecmap_insert!(self, terminals, token);
-            self.next_state(visitor.clone(), &bt);
-            lookahead.insert(t, Action::Shift(bt));
+            let next = self.next_state(visitor.clone(), &bt);
+            lookahead.insert(t, Action::Shift(next));
         }
 
         let mut self_reductions = HashSet::new();
 
-        for (r, g) in goto.iter() {
+        let mut goto = HashMap::new();
+
+        for (r, g) in goto_map.iter() {
             let mut v = visitor.clone();
             v.modules.next.reset();
             v.modules.gotos.reduce(r);
-            self.make_state(&mut v, &g.location);
+            println!("visit: {:?} -> {:?}", items, g.location);
+            let next = self.make_state(&mut v, &g.location);
 
             if g.location.len() != 1 {
                 panic!("Reduce/Reduce conflict! {}", g.location.len());
@@ -716,8 +740,27 @@ impl<'a> LR<'a> {
             let task = {
                 if let Some(code) = &reductend.code {
                     if let Some(return_type) = &rule.export {
+                        let args = components.iter().map(|c|{
+                            if let Some(identifier) = c.var.clone() {
+                                let t = match &c.handle {
+                                    parser::Component0::Regex(_) |
+                                    parser::Component0::Terminal(_) |
+                                    parser::Component0::Token => "&str".into(),
+                                    parser::Component0::Rule(r) => {
+                                        Position::rule(self.rules, r).export.clone().unwrap()
+                                    }
+                                };
+                                Some(Arg{
+                                    identifier,
+                                    arg_type: t
+                                })
+                            } else {
+                                None
+                            }
+                        }).collect();
+
                        Some(ReductionTask {
-                            args: components.iter().map(|c| c.var.clone()).collect(),
+                            args,
                             code: code.clone(),
                             return_type: return_type.clone()
                         })
@@ -736,6 +779,8 @@ impl<'a> LR<'a> {
 
             let reduction = vecmap_insert!(self, reductions, rd.clone());
 
+
+            goto.insert(reduction, next);
 
             let next = v.modules.next.get();
             for (token, _) in next {
@@ -764,22 +809,16 @@ impl<'a> LR<'a> {
                 lookahead.insert(0, Action::Halt);
         }
 
-        // create goto map
-        let goto = goto.into_iter().map(|(k,g)| {
-            //let idx = self.state_map.get(&g.location).unwrap().unwrap();
-            (k, g.location)
-        }).collect();
-
-        // push state and set pointer
-        self.states.push(State{
+        // replace with implementation
+        *self.states.get_mut(idx).unwrap() = State{
             goto,
             items: items.iter().map(|e| LR::get_item_pos(self.rules, e.clone())).collect(),
             lookahead
-        });
-        self.state_map.insert(items.clone(), Some(self.states.len()-1));
+        };
+        idx
     }
-    fn next_state(&mut self, mut visitor: Visitor, items: &BTreeSet<Position>) {
+    fn next_state(&mut self, mut visitor: Visitor, items: &BTreeSet<Position>) -> usize{
         visitor.modules.next.reset();
-        self.make_state(&mut visitor, items);
+        self.make_state(&mut visitor, items)
     }
 }
