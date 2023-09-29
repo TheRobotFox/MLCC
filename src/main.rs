@@ -3,7 +3,7 @@ use std::fs::read_to_string;
 use std::fs::File;
 use std::io::Write;
 mod lr;
-mod reverseparse;
+// mod reverseparse;
 mod parser;
 fn main() {
     let source = match read_to_string("simple.g") {
@@ -23,7 +23,7 @@ fn main() {
         Ok(lr)=>lr,
         Err(errors) => {
             println!("Error occured!");
-            errors.into_iter().for_each(|e| e.print(&ast.rules));
+            println!("{:?}", errors);
             return;
         }
     };
@@ -42,16 +42,14 @@ fn main() {
     }
     println!("");
     for (i, state) in lr.states.iter().enumerate() {
-        println!("{}. {} {:?} {:?}", i, state.items.clone().into_iter().fold(String::from("[ "), |s,a|{s+(a +" | ").as_str()})+"]", state.lookahead, state.goto);
+            println!("{}. {} {:?}", i, state.position.get_string(&ast.rules), state.shift_map);
     }
 
-    println!("start: {}", lr.start);
+    // let output = reverseparse::export(&lr);
+    // let mut file = match File::create("../parser/src/main.rs") {
+    //     Err(e) => panic!("Could not open file: {:?}", e),
+    //     Ok(f) =>f
+    // };
 
-    let output = reverseparse::export(&lr);
-    let mut file = match File::create("../parser/src/main.rs") {
-        Err(e) => panic!("Could not open file: {:?}", e),
-        Ok(f) =>f
-    };
-
-    let _ = file.write_all(output.as_bytes());
+    // let _ = file.write_all(output.as_bytes());
 }
