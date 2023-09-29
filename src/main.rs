@@ -42,7 +42,7 @@ fn main() {
     }
     println!("");
     for (i, state) in lr.states.iter().enumerate() {
-            println!("{}. {} {:?}", i, state.position.get_string(&ast.rules), state.shift_map);
+        println!("{}. {} {:?} {:?} {:?}", i, state.position.get_string(&ast.rules), state.shift_map, state.reduce_map, state.next);
     }
 
     // let output = reverseparse::export(&lr);

@@ -212,6 +212,7 @@ macro_rules! make_lr {
         pub struct LRBuilder<'a> {
             lr: LR,
             $($name: HashMap<$f, usize>,)*
+            states: Vec<RawState>,
             state_map: HashMap<StateAbstract, IdxState>,
             rules: &'a Vec<parser::Rule>
         }
@@ -225,6 +226,7 @@ macro_rules! make_lr {
                 let lrbuilder = LRBuilder {
                     lr,
                     $($name: HashMap::new(),)*
+                    states: Vec::new(),
                     state_map: HashMap::new(),
                     rules
                 };
@@ -273,19 +275,27 @@ impl StateAbstract {
         false
     }
 }
-#[derive(Default, Debug)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct State {
     pub position: Positions,
+    pub shift_map: BTreeMap<IdxToken, IdxState>,
+    pub reduce_map: BTreeMap<IdxToken, IdxReduction>,
+    pub next: Option<IdxState>,
+}
+#[derive(Default, Debug)]
+struct RawState {
+    pub position: Positions,
     pub shift_map: HashMap<IdxToken, IdxState>,
-    pub reduce: Option<IdxReduction>,
+    pub reduce_map: HashMap<IdxToken, IdxReduction>,
+    reduce: Option<IdxReduction>,
     reduce_import: Option<IdxState>,
-    shift_import: BTreeSet<IdxState>
+    shift_import: HashSet<IdxState>
 }
 #[derive(Default, Debug)]
 struct StateData {
     shift_map: BTreeMap<IdxState, Positions>,
     reduce: Option<IdxReduction>,
-    shift_import: BTreeSet<IdxState>
+    shift_import: HashSet<IdxState>
 }
 
 enum Event {
@@ -298,10 +308,46 @@ impl<'a> LRBuilder<'a> {
         self.lr.terminals.push(Token::EOF); // Token::EOF == 0
         let _ = self.add_rule("start")?;
 
-        for state in 0..self.lr.states.len() {
-            let mut visisted = HashSet::new();
-            let _ = self.import_shifts(state, &mut visisted);
+        // dbg!(&self.states);
+        // import shifts
+        for state in 0..self.states.len() {
+            let _ = self.import_shifts(state, &mut HashSet::new())?;
         }
+
+        // import tokens
+        for state in 0..self.states.len() {
+            let _ = self.import_reduce(state, &mut HashSet::new())?;
+        }
+
+        // compress
+        // let mut merge_set = HashMap::new();
+        // let mut relocate_map = Vec::new();
+        for raw_state in self.states {
+            let state = State{
+                position: raw_state.position,
+                reduce_map: raw_state.reduce_map.into_iter().collect(),
+                shift_map: raw_state.shift_map.into_iter().collect(),
+                next: raw_state.reduce_import.and(raw_state.reduce)
+            };
+            self.lr.states.push(state);
+            // let new_idx = merge_set.entry(state).or_insert_with_key(|state| {
+            //     let new_idx = self.lr.states.len();
+            //     self.lr.states.push(state.clone());
+            //     new_idx
+            // });
+            // relocate_map.push(*new_idx);
+        }
+
+        // relocate
+        // for state in &mut self.lr.states {
+        //     for v in state.reduce_map.values_mut() {
+        //         *v = *relocate_map.get(*v).unwrap();
+        //     }
+        //     for v in state.shift_map.values_mut() {
+        //         *v = *relocate_map.get(*v).unwrap();
+        //     }
+        // }
+
         self.lr.export = Position::rule_ref(self.rules, "start")?.export.clone();
 
         Ok(self.lr)
@@ -311,7 +357,7 @@ impl<'a> LRBuilder<'a> {
             return Ok(HashMap::new())
         }
         visited.insert(state_idx);
-        let state =  self.lr.states.get(state_idx).unwrap();
+        let state =  self.states.get(state_idx).unwrap();
         let shift_import = state.shift_import.to_owned();
         let position = state.position.clone();
         let mut map = state.shift_map.to_owned();
@@ -323,9 +369,34 @@ impl<'a> LRBuilder<'a> {
             }
         }
 
-        let state =  self.lr.states.get_mut(state_idx).unwrap();
+        let state =  self.states.get_mut(state_idx).unwrap();
         state.shift_map = map.clone();
         Ok(map)
+    }
+    fn import_reduce(&mut self, state_idx: IdxState, visited: &mut HashSet<IdxState>) -> Result<Vec<IdxToken>, Error> {
+        if visited.contains(&state_idx){
+            return Ok(Vec::new())
+        }
+        visited.insert(state_idx);
+        let state = self.states.get(state_idx).unwrap();
+        let mut keys: Vec<_> = state.shift_map.keys().map(|e| *e).collect();
+        if let Some(reduction) = state.reduce {
+            let reduce_import = state.reduce_import.to_owned();
+            let position = state.position.clone();
+            let mut map = state.reduce_map.to_owned();
+
+            if let Some(state_idx) = reduce_import {
+                let part = self.import_reduce(state_idx, visited)?;
+                for token_idx in part {
+                    self.insert_or_error(&position, &mut map, token_idx, reduction)?
+                }
+            }
+
+            let state =  self.states.get_mut(state_idx).unwrap();
+            keys.append(&mut map.keys().map(|e| *e).collect());
+            state.reduce_map = map;
+        }
+        return Ok(keys)
     }
     fn add_rule(&mut self, rule: &str) -> Result<IdxState, Error> {
         let positions = Positions::from(self.rules, rule)?;
@@ -340,8 +411,8 @@ impl<'a> LRBuilder<'a> {
         match self.state_map.entry(state.clone()) {
             Entry::Occupied(e) => Ok(*e.get()),
             Entry::Vacant(e) => {
-                let idx = self.lr.states.len();
-                self.lr.states.push(State::default());
+                let idx = self.states.len();
+                self.states.push(RawState::default());
                 e.insert(idx);
 
                 self.mod_state(state, idx)?;
@@ -352,13 +423,13 @@ impl<'a> LRBuilder<'a> {
 
     fn insert_or_error<K ,V>(&self, position: &Positions, map: &mut HashMap<K, V>, k: K, v: V) -> Result<(), Error>
     where
-        K: std::fmt::Debug + PartialEq + Eq + std::hash::Hash + PartialEq + Eq + Clone,
+        K: std::fmt::Debug + PartialEq + Eq + Clone + std::hash::Hash,
         V: std::fmt::Debug + PartialEq + Eq + Clone
 
     {
         if let Some(prev) = map.insert(k.clone(), v.clone()) {
             let pos_string = position.get_string(self.rules);
-            Err(Error::Error(format!("Error while building map at [{:?}]:\nPosition already occupied! {:?}: ({:?}, {:?})",
+            Err(Error::Error(format!("Error while building map at {}:\nPosition already occupied! {:?}: ({:?}, {:?})",
                                      pos_string, k, prev, v)))
 
         } else {
@@ -391,7 +462,7 @@ impl<'a> LRBuilder<'a> {
         //set State
 
 
-        let state_ref = self.lr.states.get_mut(state_idx).unwrap();
+        let state_ref = self.states.get_mut(state_idx).unwrap();
         state_ref.position = state.position;
         state_ref.reduce=data.reduce;
         state_ref.shift_map= shift_map;
@@ -410,23 +481,19 @@ impl<'a> LRBuilder<'a> {
                 positions.add(position.next());
             }
             Event::Rule(r) => {
-                static mut PANIC: i32 = 0;
-                let next_position = Positions::from(self.rules, &r)?;
+
+                let return_position = position.next();
 
                 // truncate stack -> base case (recursion)
-                state.truncate(&position);
+                state.truncate(&return_position);
 
-                unsafe{PANIC+=1;}
-                if unsafe{PANIC}>3{
-                    panic!("Recusrion!");
-                }
-                let return_position = position.next().into();
                 let return_state = StateAbstract{
-                    position: return_position,
+                    position: return_position.into(),
                     reduce_import: state.reduce_import.clone(),
                 };
-                let next_reduce = Some(Box::from(return_state));
 
+                let next_reduce = Some(Box::from(return_state));
+                let next_position = Positions::from(self.rules, &r)?;
                 let next_state = StateAbstract{
                     position: next_position,
                     reduce_import: next_reduce
@@ -505,6 +572,7 @@ impl<'a> LRBuilder<'a> {
             let reduction = Reduction{task};
             Ok(reduction)
         });
+        dbg!(idx);
         Ok(idx)
     }
 }
