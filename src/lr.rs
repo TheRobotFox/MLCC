@@ -243,36 +243,19 @@ make_lr!{
 #[derive(Debug, PartialEq, Eq, Hash, Clone, PartialOrd, Ord)]
 struct StateAbstract {
     position: Positions,
+    dependency: bool,
     reduce_import: Option<Box<StateAbstract>>
 }
 impl StateAbstract {
-    fn last(&self, position: &Position) -> Option<Box<Self>> {
+    fn find(&mut self, position: &Position) -> Option<Self> {
         if self.position.contains(position) {
 
-            if let Some(state) = &self.reduce_import {
-                if let Some(import) = state.last(position) {
-                    return Some(import)
-                } else {
-                    dbg!(state);
-                    return self.reduce_import.to_owned();
-                }
-            }
-        }
-        if let Some(state) = &self.reduce_import {
-            return state.last(position)
-        }
-        None
-    }
-    fn truncate(&mut self, position: &Position) -> bool {
-        if self.position.contains(position) {
-            let state = self.last(position);
-            self.reduce_import = state;
-            return true;
+            return Some(self.to_owned())
         }
         if let Some(state) = &mut self.reduce_import {
-            return state.truncate(position)
+            return state.find(position)
         }
-        false
+        None
     }
 }
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
@@ -284,12 +267,12 @@ pub struct State {
 }
 #[derive(Default, Debug)]
 struct RawState {
-    pub position: Positions,
-    pub shift_map: HashMap<IdxToken, IdxState>,
-    pub reduce_map: HashMap<IdxToken, IdxReduction>,
+    position: Positions,
+    shift_map: HashMap<IdxToken, IdxState>,
+    reduce_map: HashMap<IdxToken, IdxReduction>,
     reduce: Option<IdxReduction>,
     reduce_import: Option<IdxState>,
-    shift_import: HashSet<IdxState>
+    shift_import: HashSet<IdxState>,
 }
 #[derive(Default, Debug)]
 struct StateData {
@@ -311,7 +294,7 @@ impl<'a> LRBuilder<'a> {
         // dbg!(&self.states);
         // import shifts
         for state in 0..self.states.len() {
-            let _ = self.import_shifts(state, &mut HashSet::new())?;
+            let _ = self.import_shifts(state, &mut HashSet::new());
         }
 
         // import tokens
@@ -320,33 +303,39 @@ impl<'a> LRBuilder<'a> {
         }
 
         // compress
-        // let mut merge_set = HashMap::new();
-        // let mut relocate_map = Vec::new();
+        let mut merge_set = HashMap::new();
+        let mut relocate_map = Vec::new();
         for raw_state in self.states {
+            // if raw_state.dependency {
+            //     relocate_map.push(0);
+            //         continue;
+            // }
             let state = State{
                 position: raw_state.position,
                 reduce_map: raw_state.reduce_map.into_iter().collect(),
                 shift_map: raw_state.shift_map.into_iter().collect(),
-                next: raw_state.reduce_import.and(raw_state.reduce)
+                next: raw_state.reduce.and(raw_state.reduce_import)
             };
-            self.lr.states.push(state);
-            // let new_idx = merge_set.entry(state).or_insert_with_key(|state| {
-            //     let new_idx = self.lr.states.len();
-            //     self.lr.states.push(state.clone());
-            //     new_idx
-            // });
-            // relocate_map.push(*new_idx);
+            let new_idx = merge_set.entry(state).or_insert_with_key(|state| {
+                let new_idx = self.lr.states.len();
+                self.lr.states.push(state.clone());
+                new_idx
+            });
+            relocate_map.push(*new_idx);
         }
 
         // relocate
-        // for state in &mut self.lr.states {
-        //     for v in state.reduce_map.values_mut() {
-        //         *v = *relocate_map.get(*v).unwrap();
-        //     }
-        //     for v in state.shift_map.values_mut() {
-        //         *v = *relocate_map.get(*v).unwrap();
-        //     }
-        // }
+        for state in &mut self.lr.states {
+            for v in state.reduce_map.values_mut() {
+                *v = *relocate_map.get(*v).unwrap();
+            }
+            for v in state.shift_map.values_mut() {
+                *v = *relocate_map.get(*v).unwrap();
+            }
+            if let Some(v) = &mut state.next {
+                *v = *relocate_map.get(*v).unwrap();
+            }
+        }
 
         self.lr.export = Position::rule_ref(self.rules, "start")?.export.clone();
 
@@ -402,6 +391,7 @@ impl<'a> LRBuilder<'a> {
         let positions = Positions::from(self.rules, rule)?;
         let state = StateAbstract {
             position: positions,
+            dependency: false,
             reduce_import: None
         };
         self.add_state(state)
@@ -450,6 +440,7 @@ impl<'a> LRBuilder<'a> {
         for (t, bt) in data.shift_map {
             let next_state = StateAbstract{
                 position: bt,
+                dependency: false,
                 reduce_import: state.reduce_import.clone()
             };
             let next_idx = self.add_state(next_state)?;
@@ -485,10 +476,13 @@ impl<'a> LRBuilder<'a> {
                 let return_position = position.next();
 
                 // truncate stack -> base case (recursion)
-                state.truncate(&return_position);
+                if let Some(state) = state.find(&return_position) {
+
+                }
 
                 let return_state = StateAbstract{
                     position: return_position.into(),
+                    dependency: false,
                     reduce_import: state.reduce_import.clone(),
                 };
 
@@ -496,6 +490,7 @@ impl<'a> LRBuilder<'a> {
                 let next_position = Positions::from(self.rules, &r)?;
                 let next_state = StateAbstract{
                     position: next_position,
+                    dependency: true,
                     reduce_import: next_reduce
                 };
 
