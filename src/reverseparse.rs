@@ -121,7 +121,7 @@ pub fn export(automaton: &automaton::Automaton) -> String {
                 if let Some(arg) = a {
                     reductions += format!("\t\t\t\tlet a{} = pop!(parser, T{});\n ", i, get_type(arg.arg_type.clone())).as_str();
                 } else {
-                    reductions += "\t\t\t\tlet _ = parser.parse_stack.pop(); ";
+                    reductions += "\t\t\t\tlet _ = parser.parse_stack.pop();\n";
                 }
             }
 
