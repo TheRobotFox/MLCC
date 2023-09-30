@@ -1,20 +1,22 @@
-use crate::lr;
+use crate::{lr, automaton::{self, Action}, };
 use std::collections::HashMap;
 
-pub fn export(lr: &lr::LR) -> String {
+pub fn export(automaton: &automaton::Automaton) -> String {
     let mut content = String::new();
 
     //generate Regex
     content += "use logos::Logos;\n";
     content += "#[derive(Logos, Debug, PartialEq, PartialOrd)]\n";
     content += "pub enum Token {\n";
-    for (i,t) in lr.terminals.iter().enumerate() {
+    for (i,t) in automaton.terminals.iter().enumerate() {
         match t {
             lr::Token::EOF => {
                 content += "\tEOF,\n";
             }
             lr::Token::Regex(r) => {
-                content+= format!("\t#[regex(r#{}#)]\n", r).as_str();
+                let mut string = r.to_string();
+                string.remove(0);
+                content+= format!("\t#[regex(r#{}#)]\n", string).as_str();
                 content+= format!("\tL{},\n", i).as_str();
             }
             lr::Token::Terminal(t) => {
@@ -52,39 +54,32 @@ pub fn export(lr: &lr::LR) -> String {
     // Gotos
 
 
-    let terminals_len = lr.terminals.len();
-    let reductions_len = lr.reductions.len();
+    let terminals_len = automaton.terminals.len();
+    let reductions_len = automaton.reductions.len();
 
-    let mut actions = format!("\tconst ACTION: [ [isize; {}]; {}] = [\n", terminals_len, lr.states.len());
-    let mut gotos = format!("\tconst GOTO: [ [usize; {}]; {}] = [\n", reductions_len, lr.states.len());
+    let mut actions = format!("\tconst ACTION: [ [isize; {}]; {}] = [\n", terminals_len, automaton.states.len());
+    let mut gotos = format!("\tconst GOTO: [ usize; {}] = [", automaton.states.len());
 
-    for state in lr.states.iter() {
+    for state in automaton.states.iter() {
         let mut array = vec![0; terminals_len];
         for (i,a) in state.lookahead.iter() {
             array[*i] = match a {
-                lr::Action::Halt => 0,
-                lr::Action::Reduce(i) => - (*i as isize) -1,
-                lr::Action::Shift(i) => *i as isize +1
+                Action::Halt => 0,
+                Action::Reduce(i) => - (*i as isize) -1,
+                Action::Shift(i) => *i as isize +1
             }
         }
         actions += format!("\t\t{:?}, \n", array).as_str();
-
-        let mut array = vec![0; reductions_len];
-
-        for (r,s) in state.goto.iter() {
-            array[*r] = *s;
-        }
-        gotos += format!("\t\t{:?}, \n", array).as_str();
     }
+        gotos += &automaton.states.iter().map(|s|{
+            s.next.clone().unwrap_or(0).to_string()
+        }).collect::<Vec<_>>().join(", ");
 
     actions+= "\t];\n\n";
-    gotos+= "\t];\n\n";
+    gotos+= "];\n\n";
 
     content += actions.as_str();
     content += gotos.as_str();
-
-
-    content += format!("\tconst START: usize = {};\n", lr.start).as_str();
 
     // reductions
     let mut types = HashMap::new();
@@ -100,7 +95,7 @@ pub fn export(lr: &lr::LR) -> String {
 
 
     let mut reductions = String::new();
-    for (i, r) in lr.reductions.iter().enumerate() {
+    for (i, r) in automaton.reductions.iter().enumerate() {
         if let Some(task) = &r.task {
             let ret = get_type(task.return_type.clone());
             content += format!("\tfn reduction{}(", i).as_str();
@@ -138,7 +133,7 @@ pub fn export(lr: &lr::LR) -> String {
     fn parse(lex: logos::Lexer<'a, Token>) -> {} {{
         let mut parser = Self{{
             parse_stack: vec![],
-            state_stack: vec![Self::START],
+            state_stack: vec![0],
             lexer: lex
         }};
 
@@ -167,7 +162,7 @@ pub fn export(lr: &lr::LR) -> String {
                     continue;
                 }}
             }}
-            parser.state_stack.push(Parser::GOTO[state][-(task+1) as usize]);
+            parser.state_stack.push(Parser::GOTO[state]);
         }}
         if parser.parse_stack.len() != 1 {{
             panic!("Parsing failed! {{:?}}", parser.parse_stack);
@@ -179,7 +174,7 @@ pub fn export(lr: &lr::LR) -> String {
             }}
         }}
     }}
-"#, lr.export, reductions).as_str();
+"#, automaton.export.clone().unwrap_or("()".into()), reductions).as_str();
 
     content += "}\n\n";
     // types
@@ -205,7 +200,7 @@ fn main() {
     println!("Input: {:?}", &string);
     let string = string.trim();
     let lex = Token::lexer(string);
-    println!("Result: {}", Parser::parse(lex));
+    println!("Result: {:?}", Parser::parse(lex));
 }"#;
 
     content

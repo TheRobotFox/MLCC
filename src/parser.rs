@@ -12,7 +12,6 @@ pub enum gTokens {
 
     #[token("|")]
     Or,
-
     #[token("?")]
     Ternary,
 
@@ -39,6 +38,9 @@ pub enum gTokens {
 
     #[token(")")]
     Pclose,
+
+    #[token("&")]
+    Ref,
 
     #[regex(r#""([^"\\]|\\.)*""#)]
     Terminal,

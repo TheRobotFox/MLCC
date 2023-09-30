@@ -1,11 +1,8 @@
-use crate::parser;
+use crate::parser::{self, Components};
 use std::{rc::Rc, collections::{HashMap, BTreeMap, BTreeSet, HashSet}};
 use std::collections::hash_map::Entry;
 
-type IdxState = usize;
-type IdxReduction = usize;
 type IdxRule = usize;
-type IdxToken = usize;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum Token {
@@ -13,24 +10,19 @@ pub enum Token {
     Regex(Rc<str>),
     EOF
 }
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct Reduction {
-    pub task: Option<ReductionTask>,
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ReductendPosition{
+    pub rule: IdxRule,
+    pub reductend: usize
 }
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct ReductionTask{
-    pub code: Rc<str>,
-    pub args: Vec<Option<Arg>>,
-    pub return_type: Rc<str>,
+impl From<Position> for ReductendPosition {
+    fn from(value: Position) -> Self {
+        Self{
+            rule: value.rule,
+            reductend: value.reductend
+        }
+    }
 }
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct Arg {
-    pub identifier: Rc<str>,
-    pub arg_type: Rc<str>
-}
-
 pub enum Error {
     GrammarErrors(Vec<GrammarError>),
     Error(String)
@@ -175,242 +167,43 @@ impl Positions {
     }
 }
 
-macro_rules! vecmap {
-    ($self:ident, $name:ident, $e:expr) => {
-        match $self.$name.entry($e.clone()) {
-            std::collections::hash_map::Entry::Occupied(e) => e.get().clone(),
-            std::collections::hash_map::Entry::Vacant(e) => {
-                let idx = $self.lr.$name.len();
-                $self.lr.$name.push($e);
-                e.insert(idx);
-                idx
-            }
-        }
-    }
+pub struct LR<'a>{
+    pub state_map: HashMap<Positions, State>,
+    pub start: Positions,
+    pub x: Positions,
+    pub rules: &'a Vec<parser::Rule>,
+    pub export: Option<Rc<str>>
 }
-macro_rules! vecmap_get_or_insert {
-    ($self:ident, $name:ident, $s:expr, $e:expr) => {
-        match $self.$name.entry($s) {
-            std::collections::hash_map::Entry::Occupied(e) => e.get().clone(),
-            std::collections::hash_map::Entry::Vacant(e) => {
-                let idx = $self.lr.$name.len();
-                $self.lr.$name.push($e?);
-                e.insert(idx);
-                idx
-            }
-        }
-    }
-}
-
-macro_rules! make_lr {
-    {$($name:ident: |$t:ty, $f:ty|),*} =>{
-        pub struct LR {
-            $(pub $name: Vec<$t>,)*
-            pub states: Vec<State>,
-            pub export: Option<Rc<str>>
-        }
-        pub struct LRBuilder<'a> {
-            lr: LR,
-            $($name: HashMap<$f, usize>,)*
-            states: Vec<RawState>,
-            state_map: HashMap<StateAbstract, IdxState>,
-            rules: &'a Vec<parser::Rule>
-        }
-        impl LR {
-            pub fn new<'a>(rules: &'a Vec<parser::Rule>) -> Result<Self, Error> {
-                let lr = Self{
-                    states: Vec::new(),
-                    export: None,
-                    $($name: Vec::new(),)*
-                };
-                let lrbuilder = LRBuilder {
-                    lr,
-                    $($name: HashMap::new(),)*
-                    states: Vec::new(),
-                    state_map: HashMap::new(),
-                    rules
-                };
-                lrbuilder.run()
-            }
-        }
-    }
-}
-make_lr!{
-    terminals: |Token, Token|,
-    reductions: |Reduction, (usize, usize)|
-}
-
-#[derive(Debug, PartialEq, Eq, Hash, Clone, PartialOrd, Ord)]
-struct StateAbstract {
-    position: Positions,
-    dependency: bool,
-    reduce_import: Option<Box<StateAbstract>>
-}
-impl StateAbstract {
-    fn find(&mut self, position: &Position) -> Option<Self> {
-        if self.position.contains(position) {
-
-            return Some(self.to_owned())
-        }
-        if let Some(state) = &mut self.reduce_import {
-            return state.find(position)
-        }
-        None
-    }
-}
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct State {
-    pub position: Positions,
-    pub shift_map: BTreeMap<IdxToken, IdxState>,
-    pub reduce_map: BTreeMap<IdxToken, IdxReduction>,
-    pub next: Option<IdxState>,
+    pub shift_map: HashMap<Token, Positions>,
+    pub goto_map: HashMap<ReductendPosition, Positions>,
+    pub reduce: Option<ReductendPosition>
 }
-#[derive(Default, Debug)]
-struct RawState {
-    position: Positions,
-    shift_map: HashMap<IdxToken, IdxState>,
-    reduce_map: HashMap<IdxToken, IdxReduction>,
-    reduce: Option<IdxReduction>,
-    reduce_import: Option<IdxState>,
-    shift_import: HashSet<IdxState>,
-}
-#[derive(Default, Debug)]
-struct StateData {
-    shift_map: BTreeMap<IdxState, Positions>,
-    reduce: Option<IdxReduction>,
-    shift_import: HashSet<IdxState>
-}
-
 enum Event {
     Token(Token),
     Rule(Rc<str>),
     Reduce
 }
-impl<'a> LRBuilder<'a> {
-    fn run(mut self) -> Result<LR, Error> {
-        self.lr.terminals.push(Token::EOF); // Token::EOF == 0
-        let _ = self.add_rule("start")?;
+impl<'a> LR<'a> {
 
-        // dbg!(&self.states);
-        // import shifts
-        for state in 0..self.states.len() {
-            let _ = self.import_shifts(state, &mut HashSet::new());
-        }
+    pub fn new(rules: &'a Vec<parser::Rule>) -> Result<Self, Error> {
 
-        // import tokens
-        for state in 0..self.states.len() {
-            let _ = self.import_reduce(state, &mut HashSet::new())?;
-        }
+        let positions = Positions::from(rules, "start")?;
+        let x_position = Positions::from(rules, "X")?;
 
-        // compress
-        let mut merge_set = HashMap::new();
-        let mut relocate_map = Vec::new();
-        for raw_state in self.states {
-            // if raw_state.dependency {
-            //     relocate_map.push(0);
-            //         continue;
-            // }
-            let state = State{
-                position: raw_state.position,
-                reduce_map: raw_state.reduce_map.into_iter().collect(),
-                shift_map: raw_state.shift_map.into_iter().collect(),
-                next: raw_state.reduce.and(raw_state.reduce_import)
-            };
-            let new_idx = merge_set.entry(state).or_insert_with_key(|state| {
-                let new_idx = self.lr.states.len();
-                self.lr.states.push(state.clone());
-                new_idx
-            });
-            relocate_map.push(*new_idx);
-        }
-
-        // relocate
-        for state in &mut self.lr.states {
-            for v in state.reduce_map.values_mut() {
-                *v = *relocate_map.get(*v).unwrap();
-            }
-            for v in state.shift_map.values_mut() {
-                *v = *relocate_map.get(*v).unwrap();
-            }
-            if let Some(v) = &mut state.next {
-                *v = *relocate_map.get(*v).unwrap();
-            }
-        }
-
-        self.lr.export = Position::rule_ref(self.rules, "start")?.export.clone();
-
-        Ok(self.lr)
-    }
-    fn import_shifts(&mut self, state_idx: IdxState, visited: &mut HashSet<IdxState>) -> Result<HashMap<IdxToken, IdxState>, Error> {
-        if visited.contains(&state_idx){
-            return Ok(HashMap::new())
-        }
-        visited.insert(state_idx);
-        let state =  self.states.get(state_idx).unwrap();
-        let shift_import = state.shift_import.to_owned();
-        let position = state.position.clone();
-        let mut map = state.shift_map.to_owned();
-
-        for state_idx in shift_import {
-            let part = self.import_shifts(state_idx, visited)?;
-            for (token_idx, state_idx) in part {
-                self.insert_or_error(&position, &mut map, token_idx, state_idx)?
-            }
-        }
-
-        let state =  self.states.get_mut(state_idx).unwrap();
-        state.shift_map = map.clone();
-        Ok(map)
-    }
-    fn import_reduce(&mut self, state_idx: IdxState, visited: &mut HashSet<IdxState>) -> Result<Vec<IdxToken>, Error> {
-        if visited.contains(&state_idx){
-            return Ok(Vec::new())
-        }
-        visited.insert(state_idx);
-        let state = self.states.get(state_idx).unwrap();
-        let mut keys: Vec<_> = state.shift_map.keys().map(|e| *e).collect();
-        if let Some(reduction) = state.reduce {
-            let reduce_import = state.reduce_import.to_owned();
-            let position = state.position.clone();
-            let mut map = state.reduce_map.to_owned();
-
-            if let Some(state_idx) = reduce_import {
-                let part = self.import_reduce(state_idx, visited)?;
-                for token_idx in part {
-                    self.insert_or_error(&position, &mut map, token_idx, reduction)?
-                }
-            }
-
-            let state =  self.states.get_mut(state_idx).unwrap();
-            keys.append(&mut map.keys().map(|e| *e).collect());
-            state.reduce_map = map;
-        }
-        return Ok(keys)
-    }
-    fn add_rule(&mut self, rule: &str) -> Result<IdxState, Error> {
-        let positions = Positions::from(self.rules, rule)?;
-        let state = StateAbstract {
-            position: positions,
-            dependency: false,
-            reduce_import: None
+        let mut lr = Self{
+            rules,
+            state_map: HashMap::new(),
+            start: positions.clone(),
+            x: x_position.clone(),
+            export: None
         };
-        self.add_state(state)
+        lr.export = Position::rule_ref(rules, "start")?.export.clone();
+        lr.add_state(positions)?;
+        lr.add_state(x_position)?;
+        Ok(lr)
     }
-    fn add_state(&mut self, state: StateAbstract) -> Result<IdxState, Error> {
-        // dbg!(&state);
-        match self.state_map.entry(state.clone()) {
-            Entry::Occupied(e) => Ok(*e.get()),
-            Entry::Vacant(e) => {
-                let idx = self.states.len();
-                self.states.push(RawState::default());
-                e.insert(idx);
-
-                self.mod_state(state, idx)?;
-                Ok(idx)
-            }
-        }
-    }
-
     fn insert_or_error<K ,V>(&self, position: &Positions, map: &mut HashMap<K, V>, k: K, v: V) -> Result<(), Error>
     where
         K: std::fmt::Debug + PartialEq + Eq + Clone + std::hash::Hash,
@@ -426,90 +219,67 @@ impl<'a> LRBuilder<'a> {
             Ok(())
         }
     }
-    fn mod_state(&mut self, state: StateAbstract, state_idx: IdxState) -> Result<(), Error>{
+    fn add_state(&mut self, position: Positions) -> Result<(), Error> {
 
-        let mut data = StateData::default();
-        let mut items = Vec::new();
-
-        for position in state.position.iter() {
-            self.collect(position.clone(), state.clone(), &mut data)?;
-            items.push(position.get_string(self.rules));
-        }
-        let mut shift_map = HashMap::new();
-
-        for (t, bt) in data.shift_map {
-            let next_state = StateAbstract{
-                position: bt,
-                dependency: false,
-                reduce_import: state.reduce_import.clone()
-            };
-            let next_idx = self.add_state(next_state)?;
-            self.insert_or_error(&state.position, &mut shift_map, t, next_idx)?;
+        match self.state_map.entry(position.clone()) {
+            Entry::Occupied(e) => {return Ok(())}
+            Entry::Vacant(e) => {
+                e.insert(State::default());
+            }
         }
 
-        let reduce_import = if let Some(state) = state.reduce_import {
-            Some(self.add_state(*state)?)
-        } else {None};
-        //set State
+        let state = self.state_map.get_mut(&position).unwrap();
+        let mut visited = HashSet::new();
+        for position in position {
+            Self::collect(position, state, self.rules, &mut visited)?
+        }
+        let mut implement = Vec::new();
+        implement.extend(state.goto_map.values().map(|e| e.clone()));
+        implement.extend(state.shift_map.values().map(|e| e.clone()));
 
-
-        let state_ref = self.states.get_mut(state_idx).unwrap();
-        state_ref.position = state.position;
-        state_ref.reduce=data.reduce;
-        state_ref.shift_map= shift_map;
-        state_ref.shift_import = data.shift_import;
-        state_ref.reduce_import = reduce_import;
-
+        for state in implement {
+            self.add_state(state)?
+        }
         Ok(())
     }
-    fn collect(&mut self, position: Position, mut state: StateAbstract, data: &mut StateData) -> Result<(), Error>{
-        // dbg!(&position);
-        match self.next_event(&position) {
+    fn collect(position: Position, state: &mut State, rules: &Vec<parser::Rule>, visited: &mut HashSet<Positions>) -> Result<(), Error>{
+        dbg!(&position);
+        match Self::next_event(&position, rules) {
             Event::Token(token) => {
 
-                let t = vecmap!(self, terminals, token);
-                let positions = data.shift_map.entry(t).or_insert(Positions::new());
+                let positions = state.shift_map.entry(token).or_insert(Positions::new());
                 positions.add(position.next());
             }
             Event::Rule(r) => {
 
+                let next_position = Positions::from(rules, &r)?;
+                if visited.contains(&next_position) {
+                    return Ok(())
+                }
+                visited.insert(next_position.clone());
+
                 let return_position = position.next();
 
-                // truncate stack -> base case (recursion)
-                if let Some(state) = state.find(&return_position) {
+                for position in next_position {
+                    let reduction = position.clone().into();
+                    state.goto_map.insert(reduction, return_position.clone().into());
+
+                    Self::collect(position, state, rules, visited)?
 
                 }
-
-                let return_state = StateAbstract{
-                    position: return_position.into(),
-                    dependency: false,
-                    reduce_import: state.reduce_import.clone(),
-                };
-
-                let next_reduce = Some(Box::from(return_state));
-                let next_position = Positions::from(self.rules, &r)?;
-                let next_state = StateAbstract{
-                    position: next_position,
-                    dependency: true,
-                    reduce_import: next_reduce
-                };
-
-                let next_idx = self.add_state(next_state)?;
-                data.shift_import.insert(next_idx);
             }
             Event::Reduce => {
-                if data.reduce.is_some() {
+                if state.reduce.is_some() {
                     panic!("duplciate path! This is horrendous")
                 }
 
-                let reduction = self.make_reduction(position.rule, position.reductend)?;
-                data.reduce = Some(reduction);
+                state.reduce = Some(position.into());
             }
         }
         Ok(())
     }
-    fn next_event(&self, position: &Position) -> Event {
-        if let Some(component) = position.get(self.rules) {
+    fn next_event(position: &Position, rules: &Vec<parser::Rule>) -> Event {
+        if let Some(component) = position.get(rules) {
 
             match &component.handle {
                 parser::Component0::Regex(r) => {
@@ -529,45 +299,4 @@ impl<'a> LRBuilder<'a> {
         }
     }
 
-    fn make_reduction(&mut self, rule: usize, reductend: usize) -> Result<IdxReduction, Error>{
-
-        let idx = vecmap_get_or_insert!(self, reductions, (rule, reductend), {
-
-            let rule_ref = self.rules.get(rule).unwrap();
-            let reductend = rule_ref.reductends.reductends.get(reductend).unwrap();
-
-            let task = if let Some(code) = &reductend.code {
-
-                let mut args = Vec::new();
-                let components = &reductend.components.components;
-                for component in components {
-                    let arg = if let Some(identifier) = &component.var {
-
-                        let arg_type = match &component.handle {
-                            parser::Component0::Regex(_)
-                            | parser::Component0::Terminal(_)
-                            | parser::Component0::Token => "&str".into(), // advanced Types
-                            parser::Component0::Rule(r) => {
-                                Position::rule_ref(self.rules, &r)?.export.clone().ok_or_else(|| todo!())? // induce
-                            }
-                        };
-                        Some(Arg{identifier: identifier.clone(), arg_type})
-                    } else {None};
-                    args.push(arg);
-                }
-
-                Some(ReductionTask{
-                    code: code.clone(),
-                    return_type: rule_ref.export.clone().unwrap(), // todo return induction
-                    args
-                })
-
-            } else {None};
-
-            let reduction = Reduction{task};
-            Ok(reduction)
-        });
-        dbg!(idx);
-        Ok(idx)
-    }
 }
