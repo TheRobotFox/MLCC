@@ -58,7 +58,7 @@ pub fn export(automaton: &automaton::Automaton) -> String {
     let reductions_len = automaton.reductions.len();
 
     let mut actions = format!("\tconst ACTION: [ [isize; {}]; {}] = [\n", terminals_len, automaton.states.len());
-    let mut gotos = format!("\tconst GOTO: [ usize; {}] = [", automaton.states.len());
+    let mut gotos = format!("\tconst GOTO: [ [usize; {}]; {}] = [\n", reductions_len, automaton.states.len());
 
     for state in automaton.states.iter() {
         let mut array = vec![0; terminals_len];
@@ -70,16 +70,21 @@ pub fn export(automaton: &automaton::Automaton) -> String {
             }
         }
         actions += format!("\t\t{:?}, \n", array).as_str();
+
+        let mut array = vec![0; reductions_len];
+
+        for (r,s) in state.goto.iter() {
+            array[*r] = *s;
+        }
+        gotos += format!("\t\t{:?}, \n", array).as_str();
     }
-        gotos += &automaton.states.iter().map(|s|{
-            s.next.clone().unwrap_or(0).to_string()
-        }).collect::<Vec<_>>().join(", ");
 
     actions+= "\t];\n\n";
-    gotos+= "];\n\n";
+    gotos+= "\t];\n\n";
 
     content += actions.as_str();
     content += gotos.as_str();
+
 
     // reductions
     let mut types = HashMap::new();
@@ -121,7 +126,7 @@ pub fn export(automaton: &automaton::Automaton) -> String {
                 if let Some(arg) = a {
                     reductions += format!("\t\t\t\tlet a{} = pop!(parser, T{});\n ", i, get_type(arg.arg_type.clone())).as_str();
                 } else {
-                    reductions += "\t\t\t\tlet _ = parser.parse_stack.pop();\n";
+                    reductions += "\t\t\t\tlet _ = parser.parse_stack.pop(); ";
                 }
             }
 
@@ -162,7 +167,7 @@ pub fn export(automaton: &automaton::Automaton) -> String {
                     continue;
                 }}
             }}
-            parser.state_stack.push(Parser::GOTO[state]);
+            parser.state_stack.push(Parser::GOTO[state][-(task+1) as usize]);
         }}
         if parser.parse_stack.len() != 1 {{
             panic!("Parsing failed! {{:?}}", parser.parse_stack);
@@ -174,7 +179,7 @@ pub fn export(automaton: &automaton::Automaton) -> String {
             }}
         }}
     }}
-"#, automaton.export.clone().unwrap_or("()".into()), reductions).as_str();
+"#, automaton.export.clone().unwrap_or("".into()), reductions).as_str();
 
     content += "}\n\n";
     // types
@@ -200,7 +205,7 @@ fn main() {
     println!("Input: {:?}", &string);
     let string = string.trim();
     let lex = Token::lexer(string);
-    println!("Result: {:?}", Parser::parse(lex));
+    println!("Result: {}", Parser::parse(lex));
 }"#;
 
     content

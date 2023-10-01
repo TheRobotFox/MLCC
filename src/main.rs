@@ -2,6 +2,7 @@ use logos::Logos;
 use std::fs::read_to_string;
 use std::fs::File;
 use std::io::Write;
+use astt;
 mod parser;
 mod lr;
 mod automaton;
@@ -56,7 +57,7 @@ fn main() {
     }
     println!("");
     for (i, state) in automaton.states.iter().enumerate() {
-        println!("{}. {} {:?} {:?}", i, state.position.get_string(&ast.rules), state.lookahead, state.next);
+        println!("{}. {} {:?} {:?}", i, state.position.get_string(&ast.rules), state.lookahead, state.goto);
     }
 
     let output = reverseparse::export(&automaton);
