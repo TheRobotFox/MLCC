@@ -2,7 +2,7 @@ use logos::Logos;
 use std::fs::read_to_string;
 use std::fs::File;
 use std::io::Write;
-use astt;
+// use astt;
 mod parser;
 mod lr;
 mod automaton;
@@ -31,8 +31,9 @@ fn main() {
         }
     };
     for (p, s) in &lr.state_map {
-        println!("{}: {:?} {:?} {:?}", p.get_string(&ast.rules), s.shift_map, s.goto_map, s.reduce);
+        println!("{}: {:#?} {:#?} {:#?}", p.get_string(&ast.rules), s.shift_map, s.goto_map, s.reduce);
     }
+    // panic!("");
     let automaton = match automaton::Automaton::new(&lr) {
         Ok(lr)=>lr,
         Err(errors) => {

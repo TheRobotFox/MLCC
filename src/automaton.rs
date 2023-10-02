@@ -30,7 +30,7 @@ pub struct Arg {
     pub arg_type: Rc<str>
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Action {
     Shift(IdxState),
     Reduce(IdxReduction),
@@ -55,7 +55,7 @@ macro_rules! make_automanton {
             automaton: Automaton,
             $($name: HashMap<$f, usize>,)*
             rules: &'a Vec<parser::Rule>,
-            state_map: HashMap<StateImpl, IdxState>
+            state_map: HashMap<StateImpl, (IdxState, bool)>
         }
         impl Automaton {
             pub fn new<'a>(lr: &LR<'a>) -> Result<Self, Error> {
@@ -128,29 +128,47 @@ impl AutomatonBuilder<'_> {
 
         Ok(self.automaton)
     }
-    fn impl_state(&mut self, lr: &LR, state_impl: StateImpl) -> Result<IdxState, Error>{
-        // dbg!(&state_impl);
-        let state_ref = lr.state_map.get(&state_impl.position).unwrap();
+    fn allocate_state(&mut self, state_impl: StateImpl) -> (IdxState, bool) {
         let impl_idx = match self.state_map.entry(state_impl.clone()){
-            Entry::Occupied(e) => return Ok(*e.get()),
+            Entry::Occupied(e) => *e.get(),
             Entry::Vacant(e) => {
-                let impl_idx = self.automaton.states.len();
+                let res = (self.automaton.states.len(), false);
                 self.automaton.states.push(State::default());
-                e.insert(impl_idx);
-                impl_idx
+                e.insert(res);
+                res
             }
         };
+        impl_idx
+    }
+    // TODO import Shift tokens
+    fn impl_state(&mut self, lr: &LR, state_impl: StateImpl) -> Result<IdxState, Error>{
 
+        let (impl_idx, implemented) = self.allocate_state(state_impl.clone());
+        if implemented {
+            return Ok(impl_idx);
+        }
+        // mark as implemented
+        self.state_map.get_mut(&state_impl).unwrap().1 = true;
+
+        let mut dependency_states = Vec::new();
+
+        let state_ref = lr.state_map.get(&state_impl.position).unwrap();
+
+        // bake goto map (Positions->IdxState)
+        // return states do not depend on previous
         let mut goto = HashMap::new();
         for (reductend_pos, return_pos) in state_ref.goto_map.clone() {
 
-            let return_idx = self.impl_state(lr, StateImpl{
+            let return_impl = StateImpl{
                 goto: state_impl.goto.clone(),
                 position: return_pos
-            })?;
+            };
+            let (return_idx, _) = self.allocate_state(return_impl.clone());
+            dependency_states.push(return_impl);
             let reduction_idx = self.make_reduction(reductend_pos)?;
             goto.insert(reduction_idx, return_idx);
         }
+
         let mut state = State {
             lookahead: HashMap::new(),
             goto,
@@ -161,12 +179,15 @@ impl AutomatonBuilder<'_> {
         goto.extend(state_ref.goto_map.clone());
 
         // implement follow states
+        // follow states might access prevoius lookaheads
         for (token, next_pos) in &state_ref.shift_map {
             let next = StateImpl {
                 position: next_pos.clone(),
                 goto: goto.clone()
             };
-            let next_idx = self.impl_state(lr, next)?;
+            let (next_idx, _) = self.allocate_state(next.clone());
+            dependency_states.push(next);
+
             let t = vecmap!(self, terminals, token.clone());
             state.lookahead.insert(t, Action::Shift(next_idx));
         }
@@ -175,7 +196,6 @@ impl AutomatonBuilder<'_> {
         if let Some(reduction) = &state_ref.reduce {
 
             let r = self.make_reduction(reduction.clone())?;
-            dbg!(&goto, reduction);
             let return_position = goto.get(&reduction).cloned().unwrap_or(lr.x.clone());
 
             let return_impl = StateImpl {
@@ -186,15 +206,26 @@ impl AutomatonBuilder<'_> {
             let return_idx = self.impl_state(lr, return_impl)?;
             let return_ref = self.automaton.states.get(return_idx).unwrap();
 
-            for t in return_ref.lookahead.keys() {
-                state.lookahead.insert(*t, Action::Reduce(r));
+            let return_tokens = return_ref.lookahead.keys().map(|k| k.clone()).collect::<Vec<_>>();
+            // dbg!(impl_idx, return_idx, &goto, &return_tokens);
+
+            for t in return_tokens {
+                state.lookahead.insert(t, Action::Reduce(r));
             }
             // EOF
             state.lookahead.insert(0, Action::Reduce(r));
         } else {
             state.lookahead.insert(0, Action::Halt);
         }
+
+        // update state
         *self.automaton.states.get_mut(impl_idx).unwrap() = state;
+
+        for state in dependency_states {
+            println!("impl {:?}", &state);
+            self.impl_state(lr, state)?;
+        }
+
         Ok(impl_idx)
     }
 

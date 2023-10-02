@@ -131,6 +131,8 @@ pub fn export(automaton: &automaton::Automaton) -> String {
             }
 
             reductions+=format!("\t\t\t\tpush!(parser, T{}, Self::reduction{}({}));\n\t\t\t}}\n", ret, i, args).as_str();
+        }else {
+            reductions+= &format!("\t\t\t{} => {{}}\n", -(i as isize) -1);
         }
     }
 
@@ -148,7 +150,7 @@ pub fn export(automaton: &automaton::Automaton) -> String {
             None => 0
         }};
 
-        loop {{
+        while parser.state_stack.len()>0 {{
             let state = *parser.state_stack.last().unwrap();
             // println!("got: {{}}:{{}}", state, token.clone() as usize);
             // println!("stack: {{:?}}", parser.parse_stack);
@@ -167,7 +169,14 @@ pub fn export(automaton: &automaton::Automaton) -> String {
                     continue;
                 }}
             }}
-            parser.state_stack.push(Parser::GOTO[state][-(task+1) as usize]);
+            while parser.state_stack.len()>0 {{
+                let prev = parser.state_stack.pop().unwrap();
+                let next = Self::GOTO[prev][-(task+1) as usize];
+                if next!=0 {{
+                    parser.state_stack.push(next);
+                    break
+                }}
+            }}
         }}
         if parser.parse_stack.len() != 1 {{
             panic!("Parsing failed! {{:?}}", parser.parse_stack);
