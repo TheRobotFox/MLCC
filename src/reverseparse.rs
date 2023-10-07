@@ -170,12 +170,13 @@ pub fn export(automaton: &automaton::Automaton) -> String {
                 }}
             }}
             while parser.state_stack.len()>0 {{
-                let prev = parser.state_stack.pop().unwrap();
+                let prev = *parser.state_stack.last().unwrap();
                 let next = Self::GOTO[prev][-(task+1) as usize];
                 if next!=0 {{
                     parser.state_stack.push(next);
                     break
                 }}
+                let _ = parser.state_stack.pop();
             }}
         }}
         if parser.parse_stack.len() != 1 {{

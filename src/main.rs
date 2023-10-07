@@ -1,4 +1,6 @@
 use logos::Logos;
+use std::collections::HashMap;
+use std::fmt::format;
 use std::fs::read_to_string;
 use std::fs::File;
 use std::io::Write;
@@ -30,9 +32,62 @@ fn main() {
             return;
         }
     };
+    // print table
+    let mut map = HashMap::new();
+    let mut counter = 0;
+    let mut get_insert = |p| {
+        match map.entry(p) {
+            std::collections::hash_map::Entry::Occupied(e) => {
+                *e.get()
+            }
+            std::collections::hash_map::Entry::Vacant(e) => {
+                e.insert(counter);
+                counter+=1;
+                counter-1
+            }
+        }
+    };
+    let mut positions = vec!["Positions".to_string()];
+    let mut idx = vec!["Idx".to_string()];
+    let mut next = vec!["Next".to_string()];
+    let mut goto = vec!["Return".to_string()];
+    let mut reduce = vec!["Reduce".to_string()];
+
     for (p, s) in &lr.state_map {
-        println!("{}: {:#?} {:#?} {:#?}", p.get_string(&ast.rules), s.shift_map, s.goto_map, s.reduce);
+        idx.push(get_insert(p.clone()).to_string());
+        positions.extend(p.iter().map(|p| p.get_string(&ast.rules)));
+        next.extend(s.shift_map.iter().map(|(t, p)| format!("{:?}: {}", t, get_insert(p.clone()))));
+        goto.extend(s.goto_map.iter().map(|(r, p)| format!("{},{}: {}", r.rule, r.reductend, get_insert(p.clone()))));
+        if let Some(reduction) = &s.reduce {
+            reduce.push(format!("{},{}", reduction.rule, reduction.reductend));
+        }
+
+        let lists = [&mut idx, &mut positions, &mut next, &mut goto, &mut reduce];
+
+        let heigth = lists.iter().max_by_key(|e| e.len()).unwrap().len();
+        for l in lists {
+            l.resize(heigth, "".to_string());
+        }
+
+        let lists = [&mut idx, &mut positions, &mut next, &mut goto, &mut reduce];
+        for l in lists {
+        l.push("".to_string());
+        }
+
     }
+    let lists = [&mut idx, &mut positions, &mut next, &mut goto, &mut reduce];
+
+    let widths: Vec<_> = lists.iter().map(|l| l.iter().max_by_key(|s| s.len()).unwrap().len()).collect();
+    let heigth = lists.iter().max_by_key(|e| e.len()).unwrap().len();
+    for i in 0..heigth {
+        let out: Vec<_> = lists.iter()
+                                .zip(&widths)
+                                .map(|(l, width)| format!("{:width$}", l.get(i).unwrap_or(&String::new())))
+                                .collect();
+
+        println!("{}", out.join(" | "));
+    }
+
     // panic!("");
     let automaton = match automaton::Automaton::new(&lr) {
         Ok(lr)=>lr,

@@ -159,7 +159,7 @@ impl Positions {
         let items = self.iter().map(|p| p.get_string(rules)).collect::<Vec<_>>();
         format!("[{}]", items.join(" | "))
     }
-    fn iter(&self) -> std::collections::btree_set::Iter<'_, Position> {
+    pub fn iter(&self) -> std::collections::btree_set::Iter<'_, Position> {
         self.0.iter()
     }
     fn contains(&self, position: &Position) -> bool {
@@ -222,7 +222,7 @@ impl<'a> LR<'a> {
     fn add_state(&mut self, position: Positions) -> Result<(), Error> {
 
         match self.state_map.entry(position.clone()) {
-            Entry::Occupied(e) => {return Ok(())}
+            Entry::Occupied(_) => {return Ok(())}
             Entry::Vacant(e) => {
                 e.insert(State::default());
             }
@@ -243,7 +243,7 @@ impl<'a> LR<'a> {
         Ok(())
     }
     fn collect(position: Position, state: &mut State, rules: &Vec<parser::Rule>, visited: &mut HashSet<Positions>) -> Result<(), Error>{
-        dbg!(&position);
+        // dbg!(&position);
         match Self::next_event(&position, rules) {
             Event::Token(token) => {
 
@@ -253,19 +253,21 @@ impl<'a> LR<'a> {
             Event::Rule(r) => {
 
                 let next_position = Positions::from(rules, &r)?;
+
+                let return_position = position.next();
+
+                for position in next_position.clone() {
+                    let reduction = position.clone().into();
+                    let set = state.goto_map.entry(reduction).or_insert(Positions::new());
+                    set.add(return_position.clone());
+
+                }
                 if visited.contains(&next_position) {
                     return Ok(())
                 }
                 visited.insert(next_position.clone());
-
-                let return_position = position.next();
-
                 for position in next_position {
-                    let reduction = position.clone().into();
-                    state.goto_map.insert(reduction, return_position.clone().into());
-
                     Self::collect(position, state, rules, visited)?
-
                 }
             }
             Event::Reduce => {

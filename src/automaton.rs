@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::ptr::slice_from_raw_parts;
 use std::rc::Rc;
 use std::collections::hash_map::Entry;
 
@@ -41,7 +40,7 @@ pub enum Action {
 pub struct State {
     pub position: Positions,
     pub lookahead: HashMap<IdxToken, Action>,
-    pub goto: HashMap<IdxReduction, IdxState>
+    pub goto: HashMap<IdxReduction, IdxState>,
 }
 
 macro_rules! make_automanton {
@@ -55,7 +54,7 @@ macro_rules! make_automanton {
             automaton: Automaton,
             $($name: HashMap<$f, usize>,)*
             rules: &'a Vec<parser::Rule>,
-            state_map: HashMap<StateImpl, (IdxState, bool)>
+            state_map: HashMap<StateImpl, IdxState>,
         }
         impl Automaton {
             pub fn new<'a>(lr: &LR<'a>) -> Result<Self, Error> {
@@ -68,7 +67,7 @@ macro_rules! make_automanton {
                     automaton,
                     $($name: HashMap::new(),)*
                     rules: lr.rules,
-                    state_map: HashMap::new()
+                    state_map: HashMap::new(),
                 };
                 builder.run(lr)
             }
@@ -119,38 +118,29 @@ impl AutomatonBuilder<'_> {
         self.automaton.terminals.push(Token::EOF); // Token::EOF == 0
 
         let start = lr.start.clone();
+        let goto = lr.state_map.get(&start).unwrap().goto_map.clone();
+
         let state_impl = StateImpl{
             position: start.clone(),
-            goto: BTreeMap::new()
+            goto: goto.into_iter().collect()
         };
 
         self.impl_state(&lr, state_impl)?;
 
         Ok(self.automaton)
     }
-    fn allocate_state(&mut self, state_impl: StateImpl) -> (IdxState, bool) {
+
+    fn impl_state(&mut self, lr: &LR, state_impl: StateImpl) -> Result<IdxState, Error>{
+
         let impl_idx = match self.state_map.entry(state_impl.clone()){
-            Entry::Occupied(e) => *e.get(),
+            Entry::Occupied(e) => return Ok(*e.get()),
             Entry::Vacant(e) => {
-                let res = (self.automaton.states.len(), false);
+                let res = self.automaton.states.len();
                 self.automaton.states.push(State::default());
                 e.insert(res);
                 res
             }
         };
-        impl_idx
-    }
-    // TODO import Shift tokens
-    fn impl_state(&mut self, lr: &LR, state_impl: StateImpl) -> Result<IdxState, Error>{
-
-        let (impl_idx, implemented) = self.allocate_state(state_impl.clone());
-        if implemented {
-            return Ok(impl_idx);
-        }
-        // mark as implemented
-        self.state_map.get_mut(&state_impl).unwrap().1 = true;
-
-        let mut dependency_states = Vec::new();
 
         let state_ref = lr.state_map.get(&state_impl.position).unwrap();
 
@@ -163,8 +153,7 @@ impl AutomatonBuilder<'_> {
                 goto: state_impl.goto.clone(),
                 position: return_pos
             };
-            let (return_idx, _) = self.allocate_state(return_impl.clone());
-            dependency_states.push(return_impl);
+            let return_idx = self.impl_state(lr, return_impl.clone())?;
             let reduction_idx = self.make_reduction(reductend_pos)?;
             goto.insert(reduction_idx, return_idx);
         }
@@ -185,33 +174,32 @@ impl AutomatonBuilder<'_> {
                 position: next_pos.clone(),
                 goto: goto.clone()
             };
-            let (next_idx, _) = self.allocate_state(next.clone());
-            dependency_states.push(next);
+            let next_idx = self.impl_state(lr, next.clone())?;
 
             let t = vecmap!(self, terminals, token.clone());
             state.lookahead.insert(t, Action::Shift(next_idx));
         }
 
-        // Reduce
         if let Some(reduction) = &state_ref.reduce {
 
-            let r = self.make_reduction(reduction.clone())?;
             let return_position = goto.get(&reduction).cloned().unwrap_or(lr.x.clone());
+
+            // import tokens from return state
+            let next_tokens = Self::import_next(lr, &return_position, &state_impl.goto, &mut HashSet::new())?;
 
             let return_impl = StateImpl {
                 position: return_position,
                 goto: state_impl.goto.clone().into_iter().collect()
             };
 
-            let return_idx = self.impl_state(lr, return_impl)?;
-            let return_ref = self.automaton.states.get(return_idx).unwrap();
+            let r = self.make_reduction(reduction.clone())?;
+            self.impl_state(lr, return_impl)?;
 
-            let return_tokens = return_ref.lookahead.keys().map(|k| k.clone()).collect::<Vec<_>>();
-            // dbg!(impl_idx, return_idx, &goto, &return_tokens);
-
-            for t in return_tokens {
+            for token in next_tokens {
+                let t = vecmap!(self, terminals, token.clone());
                 state.lookahead.insert(t, Action::Reduce(r));
             }
+
             // EOF
             state.lookahead.insert(0, Action::Reduce(r));
         } else {
@@ -221,12 +209,21 @@ impl AutomatonBuilder<'_> {
         // update state
         *self.automaton.states.get_mut(impl_idx).unwrap() = state;
 
-        for state in dependency_states {
-            println!("impl {:?}", &state);
-            self.impl_state(lr, state)?;
-        }
-
         Ok(impl_idx)
+    }
+
+    fn import_next(lr: &LR, postition: &Positions, goto: &BTreeMap<ReductendPosition, Positions>, visited: &mut HashSet<Positions>) -> Result<Vec<Token>, Error> {
+
+        visited.insert(postition.clone());
+        let state = lr.state_map.get(postition).unwrap();
+        let mut tokens: Vec<_> = state.shift_map.clone().into_keys().collect();
+
+        if let Some(reduction) = &state.reduce {
+            let return_position = goto.get(reduction).unwrap_or(&lr.x);
+            let mut import = Self::import_next(lr, return_position, goto, visited)?;
+            tokens.append(&mut import);
+        }
+        Ok(tokens)
     }
 
     fn make_reduction(&mut self, pos: ReductendPosition) -> Result<IdxReduction, Error>{
