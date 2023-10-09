@@ -116,6 +116,7 @@ fn main() {
         println!("{}. {} {:?} {:?}", i, state.position.get_string(&ast.rules), state.lookahead, state.goto);
     }
 
+    panic!("");
     let output = reverseparse::export(&automaton);
     let mut file = match File::create("../parser/src/main.rs") {
         Err(e) => panic!("Could not open file: {:?}", e),
