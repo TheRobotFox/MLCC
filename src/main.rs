@@ -1,6 +1,5 @@
 use logos::Logos;
 use std::collections::HashMap;
-use std::fmt::format;
 use std::fs::read_to_string;
 use std::fs::File;
 use std::io::Write;
@@ -116,7 +115,6 @@ fn main() {
         println!("{}. {} {:?} {:?}", i, state.position.get_string(&ast.rules), state.lookahead, state.goto);
     }
 
-    panic!("");
     let output = reverseparse::export(&automaton);
     let mut file = match File::create("../parser/src/main.rs") {
         Err(e) => panic!("Could not open file: {:?}", e),

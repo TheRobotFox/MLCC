@@ -59,7 +59,8 @@ macro_rules! make_automanton {
             automaton: Automaton,
             $($name: HashMap<$f, usize>,)*
             rules: &'a Vec<parser::Rule>,
-            state_map: HashMap<ReductendImpl, IdxState>,
+            state_map: HashMap<StateImpl, IdxState>,
+            // optional merge by tokens ( tails )
         }
         impl Automaton {
             pub fn new<'a>(lr: &LR<'a>) -> Result<Self, Error> {
@@ -118,17 +119,9 @@ struct StateImpl {
     goto: BTreeMap<ReductendPosition, Positions>
 }
 
-#[derive(Hash, Eq, PartialEq, Debug)]
-struct Tail {
-    reductend: IdxReductend,
-    component: IdxComponent,
-    imports: BTreeSet<Vec<Token>>
-}
-
-type RuleImplMap = HashMap<IdxRule, HashMap<ReductendImport, Vec<Positions>>>;
-
-struct RuleTemplate {
-    rule: IdxRule
+struct Goto {
+    reduction: ReductendPosition,
+    goto: Positions
 }
 
 
@@ -145,56 +138,9 @@ impl AutomatonBuilder<'_> {
             goto: goto.into_iter().collect()
         };
 
-        let mut custom = HashMap::new();
-        Self::collect_reductends(&lr, state_impl, &mut impls, &mut HashSet::new());
-
-        for (rule, reduction_imports) in custom {
-            self.impl_custom_rule()
-        };
+        self.impl_state(lr, state_impl);
         Ok(self.automaton)
     }
-
-    fn collect_reductends(lr: &LR, state_impl: StateImpl, custom_impls: &mut RuleImplMap, visited: &mut HashSet<StateImpl>) {
-
-        if visited.contains(&state_impl) {
-            return;
-        }
-        visited.insert(state_impl.clone());
-
-        let state_ref = lr.state_map.get(&state_impl.position).unwrap();
-
-        let mut gotos = state_impl.goto.clone();
-        gotos.extend(state_ref.goto_map.clone());
-
-        for position in state_ref.shift_map.values() {
-            let next = StateImpl{
-                goto: gotos.clone(),
-                position: position.clone()
-            };
-            Self::collect_reductends(lr, next, custom_impls, visited);
-        }
-
-        if let Some(reduce) = &state_ref.reduce {
-            let return_position = gotos.get(&reduce).unwrap_or(&lr.x);
-
-            let import = Self::import_next(lr, &return_position, &state_impl.goto, &mut HashSet::new());
-            let reductend_impl = ReductendImport{
-                import,
-                reductend: reduce.reductend
-            };
-            let maps = custom_impls.entry(reduce.rule).or_default();
-            let list = maps.entry(reductend_impl).or_insert(Vec::new());
-
-            list.push(return_position.clone());
-
-            let return_impl = StateImpl{
-                goto: state_impl.goto,
-                position: return_position.clone()
-            };
-            Self::collect_reductends(lr, return_impl, custom_impls, visited);
-        }
-    }
-
     fn import_next(lr: &LR, postition: &Positions, goto: &BTreeMap<ReductendPosition, Positions>, visited: &mut HashSet<Positions>) -> Vec<Token> {
 
         visited.insert(postition.clone());
@@ -208,13 +154,73 @@ impl AutomatonBuilder<'_> {
         }
         tokens
     }
+    fn impl_state(&mut self, lr: &LR, state_impl: StateImpl) -> Result<IdxState, Error> {
+        // check implemented
+        let impl_idx = match self.state_map.entry(state_impl.clone()) {
+            Entry::Occupied(e) => return Ok(*e.get()),
+            Entry::Vacant(e) => {
+                let impl_idx = self.automaton.states.len();
+                self.automaton.states.push(State::default());
+                e.insert(impl_idx);
+                impl_idx
+            }
+        };
+        let state_ref = lr.state_map.get(&state_impl.position).unwrap();
+        let mut state = State::default();
+        state.position = state_impl.position.clone();
 
-    fn make_template(&mut self, lr: &LR, rule: IdxRule, reductend_import: &HashMap<ReductendImport, Vec<Token>>) -> Result<IdxState, Error>{
-        let position = Positions::from(reductend_impl.reductend);
-        Ok(())
+        let mut return_goto = state_impl.goto.clone();
+        return_goto.remove(reduce);
+
+        for (reductend, position) in &state_ref.goto_map {
+            let return_impl = StateImpl{
+                position: position.clone(),
+                goto:
+            };
+            let reduction = self.make_reduction(reductend.clone())?;
+            state.goto.insert()
+        }
+
+        for (token, position) in &state_ref.shift_map {
+            // implement next state
+            let next_impl = StateImpl {
+                position: position.clone(),
+                goto: state_ref.goto_map.clone().into_iter().collect()
+            };
+            let next = self.impl_state(lr, next_impl)?;
+
+            let t = vecmap!(self, terminals, token.clone());
+            state.lookahead.insert(t, Action::Shift(next));
+        }
+        if let Some(reduce) = &state_ref.reduce {
+
+            let return_position = state_impl.goto.get(reduce).unwrap_or(&lr.x);
+
+            // get imports
+            let tokens = Self::import_next(lr, return_position, &return_goto, &mut HashSet::new());
+            let return_impl = StateImpl{
+                position: return_position.clone(),
+                goto: return_goto
+            };
+
+            let _ = self.impl_state(lr, return_impl)?;
+
+            let reduction = self.make_reduction(reduce.clone())?;
+            for token in tokens {
+                let t = vecmap!(self, terminals, token.clone());
+                state.lookahead.insert(t, Action::Reduce(reduction));
+            }
+            state.lookahead.insert(0, Action::Reduce(reduction));
+        } else {
+            state.lookahead.insert(0, Action::Halt);
+        }
+
+
+        *self.automaton.states.get_mut(impl_idx).unwrap() = state;
+
+        // on reduce insert new implementation
+        return Ok(impl_idx)
     }
-
-    fn impl_state(&mut self, positions)
 
     fn make_reduction(&mut self, pos: ReductendPosition) -> Result<IdxReduction, Error>{
 
