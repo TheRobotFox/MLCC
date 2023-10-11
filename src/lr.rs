@@ -137,7 +137,7 @@ impl From<Position> for Positions {
     }
 }
 impl Positions {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self(BTreeSet::new())
     }
     fn add(&mut self, position: Position) {
