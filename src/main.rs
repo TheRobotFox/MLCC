@@ -85,7 +85,7 @@ fn main() {
         println!("{}", out.join(" | "));
     }
 
-    // panic!("");
+    panic!("");
     let automaton = match automaton::Automaton::new(&lr) {
         Ok(lr)=>lr,
         Err(errors) => {

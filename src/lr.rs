@@ -23,6 +23,11 @@ impl From<Position> for ReductendPosition {
         }
     }
 }
+impl ReductendPosition {
+    pub fn component(self, component: usize) -> Position {
+        Position{ rule: self.rule, reductend: self.reductend, component }
+    }
+}
 pub enum Error {
     GrammarErrors(Vec<GrammarError>),
     Error(String)
@@ -162,7 +167,7 @@ impl Positions {
     pub fn iter(&self) -> std::collections::btree_set::Iter<'_, Position> {
         self.0.iter()
     }
-    fn contains(&self, position: &Position) -> bool {
+    pub fn contains(&self, position: &Position) -> bool {
         self.0.contains(position)
     }
 }
