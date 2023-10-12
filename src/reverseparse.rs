@@ -176,7 +176,7 @@ pub fn export(automaton: &automaton::Automaton) -> String {
                     parser.state_stack.push(next);
                     break
                 }}
-                let _ = parser.state_stack.pop();
+                let
             }}
         }}
         if parser.parse_stack.len() != 1 {{

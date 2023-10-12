@@ -6,8 +6,7 @@ use std::io::Write;
 // use astt;
 mod parser;
 mod lr;
-mod automaton;
-mod reverseparse;
+// mod reverseparse;
 
 fn main() {
     let source = match read_to_string("simple.g") {
@@ -54,12 +53,10 @@ fn main() {
 
     for (p, s) in &lr.state_map {
         idx.push(get_insert(p.clone()).to_string());
-        positions.extend(p.iter().map(|p| p.get_string(&ast.rules)));
+        positions.extend(p.iter().map(|p| p.position.get_string(&ast.rules)));
         next.extend(s.shift_map.iter().map(|(t, p)| format!("{:?}: {}", t, get_insert(p.clone()))));
         goto.extend(s.goto_map.iter().map(|(r, p)| format!("{},{}: {}", r.rule, r.reductend, get_insert(p.clone()))));
-        if let Some(reduction) = &s.reduce {
-            reduce.push(format!("{},{}", reduction.rule, reduction.reductend));
-        }
+        reduce.extend(s.reduce.iter().map(|(t, r)| format!("{:?}: {},{}", t, r.rule, r.reductend)));
 
         let lists = [&mut idx, &mut positions, &mut next, &mut goto, &mut reduce];
 
@@ -88,38 +85,38 @@ fn main() {
     }
 
     // panic!("");
-    let automaton = match automaton::Automaton::new(&lr) {
-        Ok(lr)=>lr,
-        Err(errors) => {
-            println!("Error occured!");
-            println!("{:?}", errors);
-            return;
-        }
-    };
-    println!(
-        "terminals: {:?}, states: {:?}, reductors: {:?}",
-        automaton.terminals.len(),
-        automaton.states.len(),
-        automaton.reductions.len()
-    );
-    println!("export: {:?}", automaton.export);
-    for (i, term) in automaton.terminals.iter().enumerate() {
-        println!("{}. {:?}", i, term);
-    }
-    println!("");
-    for (i, reductend) in automaton.reductions.iter().enumerate() {
-        println!("{}. {:?}", i, reductend);
-    }
-    println!("");
-    for (i, state) in automaton.states.iter().enumerate() {
-        println!("{}. {} {:?} {:?}", i, state.position.get_string(&ast.rules), state.lookahead, state.goto);
-    }
+    // let automaton = match automaton::Automaton::new(&lr) {
+    //     Ok(lr)=>lr,
+    //     Err(errors) => {
+    //         println!("Error occured!");
+    //         println!("{:?}", errors);
+    //         return;
+    //     }
+    // };
+    // println!(
+    //     "terminals: {:?}, states: {:?}, reductors: {:?}",
+    //     automaton.terminals.len(),
+    //     automaton.states.len(),
+    //     automaton.reductions.len()
+    // );
+    // println!("export: {:?}", automaton.export);
+    // for (i, term) in automaton.terminals.iter().enumerate() {
+    //     println!("{}. {:?}", i, term);
+    // }
+    // println!("");
+    // for (i, reductend) in automaton.reductions.iter().enumerate() {
+    //     println!("{}. {:?}", i, reductend);
+    // }
+    // println!("");
+    // for (i, state) in automaton.states.iter().enumerate() {
+    //     println!("{}. {} {:?} {:?}", i, state.position.get_string(&ast.rules), state.lookahead, state.goto);
+    // }
 
-    let output = reverseparse::export(&automaton);
-    let mut file = match File::create("../parser/src/main.rs") {
-        Err(e) => panic!("Could not open file: {:?}", e),
-        Ok(f) =>f
-    };
+    // let output = reverseparse::export(&automaton);
+    // let mut file = match File::create("../parser/src/main.rs") {
+    //     Err(e) => panic!("Could not open file: {:?}", e),
+    //     Ok(f) =>f
+    // };
 
-    let _ = file.write_all(output.as_bytes());
+    // let _ = file.write_all(output.as_bytes());
 }
