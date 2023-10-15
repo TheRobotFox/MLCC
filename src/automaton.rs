@@ -13,6 +13,9 @@ type IdxToken = usize;
 type IdxReduction = usize;
 type IdxComponent = usize;
 
+
+type StateImpl = BTreeSet<StateFragment>;
+
 type IdxRule = usize;
 type IdxReductend = usize;
 
@@ -60,8 +63,6 @@ macro_rules! make_automanton {
             $($name: HashMap<$f, usize>,)*
             rules: &'a Vec<parser::Rule>,
             state_map: HashMap<StateImpl, IdxState>,
-            goto_states: Vec<(StateImpl, HashMap<ReductendPosition, Positions>)>
-            // optional merge by tokens ( tails )
         }
         impl Automaton {
             pub fn new<'a>(lr: &LR<'a>) -> Result<Self, Error> {
@@ -75,7 +76,6 @@ macro_rules! make_automanton {
                     $($name: HashMap::new(),)*
                     rules: lr.rules,
                     state_map: HashMap::new(),
-                    goto_states: Vec::new()
                 };
                 builder.run(lr)
             }
@@ -115,130 +115,74 @@ macro_rules! vecmap_get_or_insert {
     }
 }
 
-#[derive(Hash, PartialEq, Eq, Clone, Debug)]
-struct StateImpl {
-    position: Positions,
-    goto: BTreeMap<ReductendPosition, Positions>
-}
-
-struct Goto {
-    reduction: ReductendPosition,
-    goto: Positions
-}
-
 
 impl AutomatonBuilder<'_> {
     fn run(mut self, lr: &LR) -> Result<Automaton, Error> {
 
-        self.automaton.terminals.push(Token::EOF); // Token::EOF == 0
+        vecmap!(self, terminals, Token::EOF); // Token::EOF == 0
 
         let start = lr.start.clone();
-        let goto = lr.state_map.get(&start).unwrap().goto_map.clone();
-
-        let goto = vec![(HashSet::new(), goto)];
-
-        let _start = self.impl_state(lr, start, goto, &mut Vec::new())?;
+        let _start_idx = self.bake_state(lr, start)?;
 
 
         Ok(self.automaton)
     }
 
-    fn flatten(mut goto: Vec<(HashSet<ReductendPosition>, HashMap<ReductendPosition, Positions>)>) -> BTreeMap<ReductendPosition, Positions>{
-        let mut res = BTreeMap::new();
-        for (_, m) in goto {
-            res.extend(m);
+    fn bake_state(&mut self, lr: &LR, state_impl: StateImpl) -> Result<IdxState, Error> {
+
+        let lr_ref = lr.state_map.get(&state_impl).unwrap();
+
+        let mut positions = Positions::new();
+        for frag in &state_impl {
+            positions.add(frag.position.clone())
         }
-        res
-    }
 
-    fn import_next(lr: &LR, postition: &Positions, goto: &BTreeMap<ReductendPosition, Positions>, visited: &mut HashSet<Positions>) -> Vec<Token> {
-
-        visited.insert(postition.clone());
-        let state = lr.state_map.get(postition).unwrap();
-        let mut tokens: Vec<_> = state.shift_map.clone().into_keys().collect();
-
-        if let Some(reduction) = &state.reduce {
-            let return_position = goto.get(reduction).unwrap_or(&lr.x);
-            let mut import = Self::import_next(lr, return_position, goto, visited);
-            tokens.append(&mut import);
-        }
-        tokens
-    }
-    fn impl_state(&mut self, lr: &LR, position: Positions, mut goto: Vec<(HashSet<ReductendPosition>, HashMap<ReductendPosition, Positions>)>, parrent_goto: &mut Vec<(IdxReduction, IdxState)>) -> Result<IdxState, Error> {
-        let local_goto: BTreeMap<_, _> = goto.last().unwrap().clone().1.clone().into_iter().collect();
-        let state_impl = StateImpl {
-            position: position.clone(),
-            goto: local_goto.clone()
-        };
-        // check implemented
-        let impl_idx = match self.state_map.entry(state_impl) {
+        let state_idx = match self.state_map.entry(state_impl) {
             Entry::Occupied(e) => return Ok(*e.get()),
             Entry::Vacant(e) => {
-                let impl_idx = self.automaton.states.len();
+                let state_idx = self.automaton.states.len();
                 self.automaton.states.push(State::default());
-                e.insert(impl_idx);
-                impl_idx
+                e.insert(state_idx);
+                state_idx
             }
         };
-        let state_ref = lr.state_map.get(&position).unwrap();
+
+
         let mut state = State::default();
-        state.position = position.clone();
+        state.position = positions;
 
-        if let Some(reduce) = &state_ref.reduce {
+        // Bake Shifts
+        for (token, next_impl) in lr_ref.shift_map.clone() {
+            let next_idx = self.bake_state(lr, next_impl.keys().cloned().collect())?;
+            let t = vecmap!(self, terminals, token);
+            state.lookahead.insert(t, Action::Shift(next_idx));
+        }
 
-            let return_position = local_goto.get(reduce).unwrap_or(&lr.x);
+        // Bake Reduce
+        for (token, reductend) in lr_ref.reduce.clone() {
+            let reduction = self.make_reduction(reductend)?;
 
-            goto.last_mut().unwrap().1.remove(reduce);
-
-            let import_goto = Self::flatten(goto.clone());
-            // get imports
-            let tokens = Self::import_next(lr, return_position, &import_goto, &mut HashSet::new());
-
-            let return_idx = self.impl_state(lr, return_position.clone(), goto.clone(), parrent_goto)?;
-            let reduction = self.make_reduction(reduce.clone())?;
-
-            parrent_goto.push(( reduction, return_idx ));
-
-            for token in tokens {
-                let t = vecmap!(self, terminals, token.clone());
-                state.lookahead.insert(t, Action::Reduce(reduction));
+            let t = vecmap!(self, terminals, token);
+            if let Some(prev) = state.lookahead.insert(t, Action::Reduce(reduction)) {
+                return Err(Error::Error(String::from("Ambiguous grammar! Not LR")))
             }
-            state.lookahead.insert(0, Action::Reduce(reduction));
-        } else {
+        }
+
+        // insert Token::EOF
+        if !state.lookahead.contains_key(&0) {
             state.lookahead.insert(0, Action::Halt);
         }
 
-
-        // catch new returns if stsate uses gotos
-        let mut gotos = Vec::new();
-        let return_catch = {
-            if state_ref.goto_map.len()>0 {
-                let mut goto_new: HashMap<_, _> = local_goto.clone().into_iter().collect();
-                goto_new.extend(state_ref.goto_map.clone());
-                goto.push((position.iter().map(|x| x.clone().into()).collect(), goto_new));
-                &mut gotos
-            } else {
-                parrent_goto
-            }
-        };
-
-        for (token, position) in &state_ref.shift_map {
-            // implement next state
-            let next = self.impl_state(lr, position.clone(), goto.clone(), return_catch)?;
-
-            let t = vecmap!(self, terminals, token.clone());
-            state.lookahead.insert(t, Action::Shift(next));
+        // Bake goto
+        for (reductend, return_impl) in lr_ref.goto_map.clone() {
+            let return_idx = self.bake_state(lr, return_impl.keys().cloned().collect())?;
+            let reduction = self.make_reduction(reductend)?;
+            state.goto.insert(reduction, return_idx);
         }
 
-        if state_ref.goto_map.len()>0 {
-            for (reduction, goto) in gotos {
-                state.goto.insert(reduction, goto);
-            }
-        }
-        *self.automaton.states.get_mut(impl_idx).unwrap() = state;
-
-        // on reduce insert new implementation
-        return Ok(impl_idx)
+        // set state
+        *self.automaton.states.get_mut(state_idx).unwrap() = state;
+        Ok(state_idx)
     }
 
     fn make_reduction(&mut self, pos: ReductendPosition) -> Result<IdxReduction, Error>{
