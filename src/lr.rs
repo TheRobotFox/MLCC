@@ -192,7 +192,7 @@ pub struct StateFragment{
     pub import: BTreeSet<Token>
 }
 
-type StateImpl = BTreeMap<StateFragment, HashSet<Position>>;
+type StateImpl = BTreeMap<StateFragment, HashSet<Rc<str>>>;
 
 enum Event {
     Token(Token),
@@ -284,7 +284,7 @@ impl<'a> LR<'a> {
         // impl next states
         Ok(())
     }
-    fn impl_frag(&self, frag: StateFragment, state: &mut State, visited: &mut HashSet<Position>) -> Result<(), Error> {
+    fn impl_frag(&self, frag: StateFragment, state: &mut State, visited: &mut HashSet<Rc<str>>) -> Result<(), Error> {
 
         println!("{:?}", &frag);
         match Self::next_event(&frag.position, self.rules) {
@@ -309,24 +309,38 @@ impl<'a> LR<'a> {
                     import: frag.import.clone()
                 };
 
+                let next = Positions::from(self.rules, &r)?;
+
+                if visited.contains(&r) {
+
+                    // add self.tokens for return
+                    // collect tokens of rule <r> ( since frag.position points to <r> )
+                    let mut import = BTreeSet::new();
+                    Self::collect_next(self.rules, frag.position.clone(), &mut import, &mut HashSet::new())?;
+
+                    for pos in next.clone() {
+                        let recurser = StateFragment{
+                            position: pos.clone(),
+                            import: import.clone()
+                        };
+                        let mut tokens = BTreeSet:new();
+                        Self::collect_next(self.rules, pos, &mut tokens, &mut HashSet::new())?;
+
+                        for token in tokens {
+                            Self::insert_token(state, token, recurser.clone(), visited);
+                        }
+                    }
+                    return Ok(())
+                }
+                visited.insert(r.clone());
+
+
                 let mut import = frag.import;
                 Self::collect_next(self.rules, return_pos.clone(), &mut import, &mut HashSet::new())?;
 
-                let next = Positions::from(self.rules, &r)?;
                 for pos in next {
                     // impl goto_map
 
-                    if visited.contains(&pos) {
-                        // return self
-                        let mut list = BTreeSet::new();
-                        Self::collect_next(self.rules, return_pos.clone(), &mut list, &mut HashSet::new())?;
-                        for token in list {
-                            // Self::insert_token(state, token, return_frag.clone(), visited);
-                            state.reduce.insert(token, frag.position.clone().into());
-                        }
-                        continue;
-                    }
-                    visited.insert(pos.clone());
 
                     let return_impl = state.goto_map.entry(pos.clone().into()).or_default();
                     return_impl.insert(return_frag.clone(), visited.clone());
@@ -342,7 +356,7 @@ impl<'a> LR<'a> {
         }
         Ok(())
     }
-    fn insert_token(state: &mut State, token: Token, next: StateFragment, visited: &mut HashSet<Position>) {
+    fn insert_token(state: &mut State, token: Token, next: StateFragment, visited: &mut HashSet<Rc<str>>) {
         let next_impl = state.shift_map.entry(token).or_default();
         next_impl.insert(next, visited.clone());
     }
@@ -388,3 +402,36 @@ impl<'a> LR<'a> {
     }
 
 }
+
+
+// A: A a
+//  | A b
+//  | a
+//  | b
+
+// | s | next | goto | reduce     | Notes |
+// |---+------+------+------------+-------|
+// | 0 | a: 1 |  1:3 |            | a     |
+// |   | b: 2 |  2:3 |            | b     |
+// |   |      |  3:5 |            |       |
+// |---+------+------+------------+-------|
+// | 1 |      |      | a:1        | a     |
+// |   |      |      | <import>:3 |       |
+// |---+------+------+------------+-------|
+// | 2 |      |      | b:2        | b     |
+// |   |      |      | <import>:3 |       |
+// |---+------+------+------------+-------|
+// | 3 | a: 4 |  4:3 | <import>:3 | A a   |
+// |   | b: 4 |  4:3 |            | A b   |
+// |---+------+------+------------+-------|
+// | 4 |      |      | a:4        | A a   |
+// |   |      |      | b:4        | A b   |
+// |   |      |      | <import>:4 |       |
+// |---+------+------+------------+-------|
+// | 5 | ***  |      |            |       |
+// *OK*
+
+// A: a -> next a import
+// A: b -> next b import
+// A: A a -> return
+// A: A b -> return
