@@ -1,6 +1,9 @@
-start: a=a {a}
-    | "a"= {0}
+start: a=a "b" {a}
+    | "b"=a {0}
     -> u32;
+a: a=a "a" {a+1}
+ | "a"=a {0}
+ -> u32;
 
 X: X;
 // start: e=a {1}

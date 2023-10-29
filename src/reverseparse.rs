@@ -126,8 +126,9 @@ pub fn export(automaton: &automaton::Automaton) -> String {
                 if let Some(arg) = a {
                     reductions += format!("\t\t\t\tlet a{} = pop!(parser, T{});\n ", i, get_type(arg.arg_type.clone())).as_str();
                 } else {
-                    reductions += "\t\t\t\tlet _ = parser.parse_stack.pop(); ";
+                    reductions += "\t\t\t\tlet _ = parser.parse_stack.pop();\n";
                 }
+                reductions += "\t\t\t\tlet _ = parser.state_stack.pop();\n";
             }
 
             reductions+=format!("\t\t\t\tpush!(parser, T{}, Self::reduction{}({}));\n\t\t\t}}\n", ret, i, args).as_str();
@@ -170,14 +171,17 @@ pub fn export(automaton: &automaton::Automaton) -> String {
                     continue;
                 }}
             }}
-            while parser.state_stack.len()>0 {{
-                let prev = parser.state_stack.pop().unwrap();
+            let mut i = parser.state_stack.len();
+            while i>0 {{
+                i-=1;
+                let prev = *parser.state_stack.get(i).unwrap();
                 let next = Self::GOTO[prev][-(task+1) as usize];
                 if next!=0 {{
                     parser.state_stack.push(next);
                     break
                 }}
             }}
+            if i==0{{break}}
         }}
         if parser.state_stack.len() != 0 {{
             panic!("Parsing failed! {{:?}}", parser.parse_stack);

@@ -313,23 +313,20 @@ impl<'a> LR<'a> {
 
                 if visited.contains(&r) {
 
-                    // add self.tokens for return
-                    // collect tokens of rule <r> ( since frag.position points to <r> )
-                    let mut import = BTreeSet::new();
-                    Self::collect_next(self.rules, frag.position.clone(), &mut import, &mut HashSet::new())?;
+                    let mut import = frag.import;
+                    Self::collect_next(self.rules, frag.position.next(), &mut import, &mut HashSet::new())?;
+
+                    let rule_return = StateFragment{
+                        position: frag.position.next(),
+                        import
+                    };
 
                     for pos in next.clone() {
-                        let recurser = StateFragment{
-                            position: pos.clone(),
-                            import: import.clone()
-                        };
-                        let mut tokens = BTreeSet:new();
-                        Self::collect_next(self.rules, pos, &mut tokens, &mut HashSet::new())?;
-
-                        for token in tokens {
-                            Self::insert_token(state, token, recurser.clone(), visited);
-                        }
+                        let set = state.goto_map.entry(pos.into()).or_default();
+                        set.insert(return_frag.clone(), visited.clone());
+                        set.insert(rule_return.clone(), visited.clone());
                     }
+
                     return Ok(())
                 }
                 visited.insert(r.clone());
