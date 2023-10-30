@@ -155,7 +155,7 @@ impl AutomatonBuilder<'_> {
 
         // Bake Shifts
         for (token, next_impl) in lr_ref.shift_map.clone() {
-            let next_idx = self.bake_state(lr, next_impl.keys().cloned().collect())?;
+            let next_idx = self.bake_state(lr, next_impl)?;
             let t = vecmap!(self, terminals, token);
             state.lookahead.insert(t, Action::Shift(next_idx));
         }
@@ -177,7 +177,7 @@ impl AutomatonBuilder<'_> {
 
         // Bake goto
         for (reductend, return_impl) in lr_ref.goto_map.clone() {
-            let return_idx = self.bake_state(lr, return_impl.keys().cloned().collect())?;
+            let return_idx = self.bake_state(lr, return_impl)?;
             let reduction = self.make_reduction(reductend)?;
             state.goto.insert(reduction, return_idx);
         }

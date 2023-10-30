@@ -192,7 +192,7 @@ pub struct StateFragment{
     pub import: BTreeSet<Token>
 }
 
-type StateImpl = BTreeMap<StateFragment, HashSet<Rc<str>>>;
+type StateImpl = BTreeSet<StateFragment>;
 
 enum Event {
     Token(Token),
@@ -215,13 +215,13 @@ impl<'a> LR<'a> {
                 position: Position{rule: rule_idx, reductend: r, component: 0},
                 import: BTreeSet::new()
             };
-            state_impl.insert(frag, HashSet::new());
+            state_impl.insert(frag);
         }
 
         let mut lr = Self{
             rules,
             state_map: HashMap::new(),
-            start: state_impl.keys().cloned().collect(),
+            start: state_impl.clone(),
             // x: x_position.clone(),
             export: None
         };
@@ -250,8 +250,7 @@ impl<'a> LR<'a> {
     fn add_state(&mut self, state_impl: StateImpl) -> Result<(), Error> {
 
         println!("{:?}", &state_impl);
-        let state_id: BTreeSet<_> = state_impl.keys().cloned().collect();
-        match self.state_map.entry(state_id.clone()) {
+        match self.state_map.entry(state_impl.clone()) {
             Entry::Occupied(_) => {return Ok(())}
             Entry::Vacant(e) => {
                 e.insert(State::default());
@@ -259,7 +258,7 @@ impl<'a> LR<'a> {
         }
         // use refence
         let mut state = State::default();
-        for (frag, visited) in state_impl.clone() {
+        for frag in state_impl.clone() {
             self.impl_frag(frag, &mut state, &mut HashSet::new())?;
         }
 
@@ -278,7 +277,7 @@ impl<'a> LR<'a> {
         }
 
 
-        *self.state_map.get_mut(&state_id).unwrap() = state;
+        *self.state_map.get_mut(&state_impl).unwrap() = state;
 
         // insert NULL token
         // impl next states
@@ -293,7 +292,7 @@ impl<'a> LR<'a> {
                     position: frag.position.next(),
                     import: frag.import.clone()
                 };
-                Self::insert_token(state, token, next_frag, visited);
+                Self::insert_token(state, token, next_frag);
             }
             Event::Reduce => {
                 for token in frag.import {
@@ -323,8 +322,8 @@ impl<'a> LR<'a> {
 
                     for pos in next.clone() {
                         let set = state.goto_map.entry(pos.into()).or_default();
-                        set.insert(return_frag.clone(), visited.clone());
-                        set.insert(rule_return.clone(), visited.clone());
+                        set.insert(return_frag.clone());
+                        set.insert(rule_return.clone());
                     }
 
                     return Ok(())
@@ -340,7 +339,7 @@ impl<'a> LR<'a> {
 
 
                     let return_impl = state.goto_map.entry(pos.clone().into()).or_default();
-                    return_impl.insert(return_frag.clone(), visited.clone());
+                    return_impl.insert(return_frag.clone());
 
                     // impl shift_map
                     let next_frag = StateFragment {
@@ -353,9 +352,9 @@ impl<'a> LR<'a> {
         }
         Ok(())
     }
-    fn insert_token(state: &mut State, token: Token, next: StateFragment, visited: &mut HashSet<Rc<str>>) {
+    fn insert_token(state: &mut State, token: Token, next: StateFragment) {
         let next_impl = state.shift_map.entry(token).or_default();
-        next_impl.insert(next, visited.clone());
+        next_impl.insert(next);
     }
     fn collect_next(rules: &Vec<parser::Rule>, position: Position, list: &mut BTreeSet<Token>, visited: &mut HashSet<Rc<str>>) -> Result<(), Error> {
         match Self::next_event(&position, rules) {

@@ -55,8 +55,8 @@ fn main() {
     for (p, s) in &lr.state_map {
         idx.push(get_insert(p.clone()).to_string());
         positions.extend(p.iter().map(|p| p.position.get_string(&ast.rules)));
-        next.extend(s.shift_map.iter().map(|(t, p)| format!("{:?}: {}", t, get_insert(p.keys().cloned().collect()))));
-        goto.extend(s.goto_map.iter().map(|(r, p)| format!("{},{}: {}", r.rule, r.reductend, get_insert(p.keys().cloned().collect()))));
+        next.extend(s.shift_map.iter().map(|(t, p)| format!("{:?}: {}", t, get_insert(p.clone()))));
+        goto.extend(s.goto_map.iter().map(|(r, p)| format!("{},{}: {}", r.rule, r.reductend, get_insert(p.clone()))));
         reduce.extend(s.reduce.iter().map(|(t, r)| format!("{:?}: {},{}", t, r.rule, r.reductend)));
 
         let lists = [&mut idx, &mut positions, &mut next, &mut goto, &mut reduce];
