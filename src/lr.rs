@@ -259,7 +259,7 @@ impl<'a> LR<'a> {
         // use refence
         let mut state = State::default();
         for frag in state_impl.clone() {
-            self.impl_frag(frag, &mut state, &mut HashSet::new())?;
+            self.impl_frag(frag, &mut state, &mut HashSet::from(["start".into()]))?;
         }
 
             println!("{:?}", state.reductions);
@@ -312,15 +312,30 @@ impl<'a> LR<'a> {
 
                 if visited.contains(&r) {
 
-                    let mut import = frag.import;
-                    Self::collect_next(self.rules, frag.position.next(), &mut import, &mut HashSet::new())?;
+                    let mut tokens = BTreeSet::new();
+                    Self::collect_next(self.rules, frag.position.next(), &mut tokens, &mut HashSet::new())?;
 
                     let rule_return = StateFragment{
                         position: frag.position.next(),
-                        import
+                        import: tokens.clone()
                     };
 
                     for pos in next.clone() {
+
+                        // import return tokens
+                        let mut next_token = BTreeSet::new();
+                        if pos != frag.position{
+                            Self::collect_next(self.rules, pos.clone(), &mut next_token, &mut HashSet::new())?;
+                            let next_return = StateFragment{
+                                position: pos.next(),
+                                import: tokens.clone()
+                            };
+                            for t in next_token{
+                                Self::insert_token(state, t, next_return.clone());
+                            }
+                        }
+
+                        // insert gotos
                         let set = state.goto_map.entry(pos.into()).or_default();
                         set.insert(return_frag.clone());
                         set.insert(rule_return.clone());

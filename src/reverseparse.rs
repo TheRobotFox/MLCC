@@ -157,6 +157,7 @@ pub fn export(automaton: &automaton::Automaton) -> String {
             println!("stack: {{:?}}", parser.state_stack);
             println!("got: {{}}:{{}}", state, token.clone() as usize);
             let task = Self::ACTION[state][token];
+            println!("task: {{}}", task);
             match task {{
                 0 => break,
 {}
@@ -181,10 +182,10 @@ pub fn export(automaton: &automaton::Automaton) -> String {
                     break
                 }}
             }}
-            if i==0{{break}}
+            if i<0{{break}}
         }}
-        if parser.state_stack.len() != 0 {{
-            panic!("Parsing failed! {{:?}}", parser.parse_stack);
+        if parser.state_stack.len() != 1 {{
+            panic!("Parsing failed! {{:?}} {{:?}}", parser.parse_stack, parser.state_stack);
         }} else {{
             match parser.parse_stack.first().unwrap() {{
                 Types::T2(s) => s.clone(),
