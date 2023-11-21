@@ -148,17 +148,22 @@ impl Positions {
     pub fn add(&mut self, position: Position) {
         self.0.insert(position);
     }
-    fn from(rules: &Vec<parser::Rule>, rule: &str) -> Result<Self, Error> {
-
-        let mut set = BTreeSet::new();
-
+    fn add_rule(&mut self, rules: &Vec<parser::Rule>, rule: &str) -> Result<(), Error>{
         let rule_idx = Position::rule_index(rules, rule)?;
         let rule_ref = rules.get(rule_idx).unwrap();
 
         for reductend in 0..rule_ref.reductends.reductends.len() {
-            set.insert(Position{rule: rule_idx, reductend, component: 0});
+            self.add(Position{rule: rule_idx, reductend, component: 0});
         }
-        Ok(Positions(set))
+        Ok(())
+    }
+    pub fn merge(&mut self, other: Self){
+        self.0.union(&other.0);
+    }
+    fn from(rules: &Vec<parser::Rule>, rule: &str) -> Result<Self, Error> {
+        let mut set = Self(BTreeSet::new());
+        set.add_rule(rules, rule)?;
+        return Ok(set);
     }
     pub fn get_string(&self, rules: &Vec<parser::Rule>) -> String {
         let items = self.iter().map(|p| p.get_string(rules)).collect::<Vec<_>>();
@@ -173,60 +178,45 @@ impl Positions {
 }
 
 pub struct LR<'a>{
-    pub state_map: HashMap<BTreeSet<StateFragment>, State>,
-    pub start: BTreeSet<StateFragment>,
-    // pub x: Positions,
+    pub state_map: HashMap<Positions, usize>,
+    pub states: Vec<State>,
+    pub start: usize,
     pub rules: &'a Vec<parser::Rule>,
     pub export: Option<Rc<str>>
 }
-#[derive(Debug, Clone, Default)]
-pub struct State {
-    pub shift_map: HashMap<Token, StateImpl>,
-    pub goto_map: HashMap<ReductendPosition, StateImpl>,
-    pub reduce: HashMap<Token, ReductendPosition>,
-    reductions: BTreeSet<ReductendPosition>
-}
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct StateFragment{
-    pub position: Position,
-    pub import: BTreeSet<Token>
-}
-
-type StateImpl = BTreeSet<StateFragment>;
 
 enum Event {
-    Token(Token),
+    Shift(Token),
     Rule(Rc<str>),
     Reduce
+}
+
+//TODO propergate import tokens
+
+struct State {
+    next: HashMap<Token, Positions>,
+    goto: HashMap<ReductendPosition, Positions>,
+    reduce: HashMap<Token, ReductendPosition>
 }
 impl<'a> LR<'a> {
 
     pub fn new(rules: &'a Vec<parser::Rule>) -> Result<Self, Error> {
 
         let positions = Positions::from(rules, "start")?;
-        let x_position = Positions::from(rules, "X")?;
-
-        let rule_idx = rules.iter().position(|x| x.identifier == "start".into()).unwrap();
-        let rule = rules.get(rule_idx).unwrap();
-
-        let mut state_impl = StateImpl::new();
-        for r in 0..rule.reductends.reductends.len() {
-            let frag = StateFragment{
-                position: Position{rule: rule_idx, reductend: r, component: 0},
-                import: BTreeSet::new()
-            };
-            state_impl.insert(frag);
-        }
 
         let mut lr = Self{
             rules,
-            state_map: HashMap::new(),
-            start: state_impl.clone(),
-            // x: x_position.clone(),
+
             export: None
         };
         lr.export = Position::rule_ref(rules, "start")?.export.clone();
 
+        for position in positions {
+            lr.start_set.insert(StateHead{
+                import: BTreeSet::new(),
+                position
+            });
+        }
         lr.add_state(state_impl)?;
         // lr.add_state(x_position)?;
         Ok(lr)
@@ -247,42 +237,60 @@ impl<'a> LR<'a> {
         }
     }
 
-    fn add_state(&mut self, state_impl: StateImpl) -> Result<(), Error> {
-
-        println!("{:?}", &state_impl);
-        match self.state_map.entry(state_impl.clone()) {
-            Entry::Occupied(_) => {return Ok(())}
-            Entry::Vacant(e) => {
-                e.insert(State::default());
+    fn expand_set(&self, set: &mut Positions) -> Result<(), Error>{
+        for position in set.clone() {
+            match Self::next_event(&position, self.rules) {
+                Event::Shift(token) => {}
+                Event::Reduce => {}
+                Event::Rule(r) => {
+                    let mut sub = Positions::from(self.rules, &r)?;
+                    self.expand_set(&mut sub)?;
+                    set.merge(sub);
+                }
             }
         }
-        // use refence
-        let mut state = State::default();
-        for frag in state_impl.clone() {
-            self.impl_frag(frag, &mut state, &mut HashSet::from(["start".into()]))?;
-        }
-
-            println!("{:?}", state.reductions);
-        if state.reductions.len() == 1 {
-            let redutend = state.reductions.pop_first().unwrap();
-            state.reduce.insert(Token::EOF, redutend);
-        }
-
-        let mut dependencies = Vec::new();
-        dependencies.extend(state.goto_map.values().cloned());
-        dependencies.extend(state.shift_map.values().cloned());
-
-        for dep in dependencies {
-            self.add_state(dep)?;
-        }
-
-
-        *self.state_map.get_mut(&state_impl).unwrap() = state;
-
-        // insert NULL token
-        // impl next states
         Ok(())
     }
+
+    fn build_state(&self, set: Positions) -> Result<State, Error> {
+
+        let mut state = State{
+            reduce: HashMap::new(),
+            next: HashMap::new(),
+            goto: HashMap::new()
+        };
+
+        for position in set {
+            match Self::next_event(&position, self.rules) {
+                Event::Shift(token) => {
+                    let mut next_set = state.next.entry(token).or_default();
+                    set.add()
+                }
+                Event::Reduce => {
+                    // Remove Subroutine; locate Return -> advance
+                }
+                Event::Rule(r) => {
+                    for red_pos in Positions::from(self.rules, &r)? {
+                        let reductend = ReductendPosition::from(red_pos);
+                        let set = state.goto.entry(reductend).or_default();
+
+                    }
+                }
+            }
+        }
+
+        return Ok(State);
+    }
+
+    fn make_state(&mut self, set: Positions) -> usize {
+        let tasks = self.collect_tasks(set);
+        // check impl
+        if let Some(idx) = todo!() {
+            return idx;
+        }
+        self.build_state(tasks);
+    }
+
     fn impl_frag(&self, frag: StateFragment, state: &mut State, visited: &mut HashSet<Rc<str>>) -> Result<(), Error> {
 
         println!("{:?}", &frag);
