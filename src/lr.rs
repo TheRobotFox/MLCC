@@ -191,11 +191,9 @@ enum Event {
     Reduce
 }
 
-//TODO propergate import tokens
-
 struct State {
     next: HashMap<Token, Positions>,
-    goto: HashMap<ReductendPosition, Positions>,
+    goto: HashMap<IdxRule, Positions>,
     reduce: HashMap<Token, ReductendPosition>
 }
 impl<'a> LR<'a> {
@@ -237,37 +235,45 @@ impl<'a> LR<'a> {
         }
     }
 
-    fn expand_set(&self, set: &mut Positions) -> Result<(), Error>{
+    fn expand_set(&self, set: &mut Positions) -> Result<HashMap<IdxRule, Positions>, Error>{
+        let mut entries = HashMap::new();
         for position in set.clone() {
             match Self::next_event(&position, self.rules) {
                 Event::Shift(token) => {}
                 Event::Reduce => {}
                 Event::Rule(r) => {
                     let mut sub = Positions::from(self.rules, &r)?;
-                    self.expand_set(&mut sub)?;
+
+                    // remember new Entries
+                    entries.extend(self.expand_set(&mut sub)?);
+                    let positions = entries.entry(Position::rule_index(self.rules, &r)?).or_default();
+                    positions.add(position.next());
+
                     set.merge(sub);
                 }
             }
         }
-        Ok(())
+        Ok(entries)
     }
 
-    fn build_state(&self, set: Positions) -> Result<State, Error> {
+    // Elegant Import forwrding?
+    fn build_state(&self, set: Positions, entries: HashMap<IdxRule, Positions>) -> Result<State, Error> {
 
         let mut state = State{
             reduce: HashMap::new(),
             next: HashMap::new(),
-            goto: HashMap::new()
+            goto: entries
         };
 
         for position in set {
             match Self::next_event(&position, self.rules) {
                 Event::Shift(token) => {
                     let mut next_set = state.next.entry(token).or_default();
-                    set.add()
+                    set.add(position.next());
                 }
                 Event::Reduce => {
-                    // Remove Subroutine; locate Return -> advance
+                    // collect possible reductends -> Tokens
+
                 }
                 Event::Rule(r) => {
                     for red_pos in Positions::from(self.rules, &r)? {
@@ -282,13 +288,10 @@ impl<'a> LR<'a> {
         return Ok(State);
     }
 
-    fn make_state(&mut self, set: Positions) -> usize {
-        let tasks = self.collect_tasks(set);
+    fn make_state(&mut self, mut set: Positions) -> Result<usize, Error> {
+        let entries = self.expand_set(&mut set)?;
         // check impl
-        if let Some(idx) = todo!() {
-            return idx;
-        }
-        self.build_state(tasks);
+        self.build_state(set, entries)?;
     }
 
     fn impl_frag(&self, frag: StateFragment, state: &mut State, visited: &mut HashSet<Rc<str>>) -> Result<(), Error> {
