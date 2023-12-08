@@ -14,7 +14,7 @@ type IdxReduction = usize;
 type IdxComponent = usize;
 
 
-type StateImpl = BTreeSet<StateFragment>;
+type StateImpl = BTreeSet<Path>;
 
 type IdxRule = usize;
 type IdxReductend = usize;
@@ -130,16 +130,16 @@ impl AutomatonBuilder<'_> {
         Ok(self.automaton)
     }
 
-    fn bake_state(&mut self, lr: &LR, state_impl: StateImpl) -> Result<IdxState, Error> {
+    fn bake_state(&mut self, lr: &LR, state_header: BTreeSet<Path>) -> Result<IdxState, Error> {
 
-        let lr_ref = lr.state_map.get(&state_impl).unwrap();
+        let lr_ref = lr.state_map.get(&state_header).unwrap();
 
         let mut positions = Positions::new();
-        for frag in &state_impl {
-            positions.add(frag.position.clone())
+        for path in &state_header {
+            positions.add(path.position.clone())
         }
 
-        let state_idx = match self.state_map.entry(state_impl) {
+        let state_idx = match self.state_map.entry(state_header) {
             Entry::Occupied(e) => return Ok(*e.get()),
             Entry::Vacant(e) => {
                 let state_idx = self.automaton.states.len();
@@ -154,7 +154,7 @@ impl AutomatonBuilder<'_> {
         state.position = positions;
 
         // Bake Shifts
-        for (token, next_impl) in lr_ref.shift_map.clone() {
+        for (token, next_impl) in lr_ref.shift.clone() {
             let next_idx = self.bake_state(lr, next_impl)?;
             let t = vecmap!(self, terminals, token);
             state.lookahead.insert(t, Action::Shift(next_idx));
@@ -176,7 +176,7 @@ impl AutomatonBuilder<'_> {
         }
 
         // Bake goto
-        for (reductend, return_impl) in lr_ref.goto_map.clone() {
+        for (reductend, return_impl) in lr_ref.goto.clone() {
             let return_idx = self.bake_state(lr, return_impl)?;
             let reduction = self.make_reduction(reductend)?;
             state.goto.insert(reduction, return_idx);
