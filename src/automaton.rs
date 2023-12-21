@@ -154,7 +154,7 @@ impl AutomatonBuilder<'_> {
         state.position = positions;
 
         // Bake Shifts
-        for (token, next_impl) in lr_ref.shift.clone() {
+        for (token, next_impl) in lr_ref.next.clone() {
             let next_idx = self.bake_state(lr, next_impl)?;
             let t = vecmap!(self, terminals, token);
             state.lookahead.insert(t, Action::Shift(next_idx));

@@ -57,9 +57,9 @@ pub struct GrammarError {
 
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Position {
-    rule: IdxRule,
-    reductend: usize,
-    component: usize,
+    pub rule: IdxRule,
+    pub reductend: usize,
+    pub component: usize,
 }
 
 impl Position{
@@ -189,31 +189,51 @@ enum Event {
     Rule(Rc<str>),
     Reduce
 }
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Path{
     pub position: Position,
     pub import: BTreeSet<Token>
 }
 
 #[derive(Clone, Default)]
-struct State {
-    next: HashMap<Token, BTreeSet<Path>>,
-    goto: HashMap<ReductendPosition, BTreeSet<Path>>,
-    reduce: HashMap<Token, ReductendPosition>
+pub struct State {
+    pub next: HashMap<Token, BTreeSet<Path>>,
+    pub goto: HashMap<ReductendPosition, BTreeSet<Path>>,
+    pub reduce: HashMap<Token, ReductendPosition>
 }
 impl<'a> LR<'a> {
 
     pub fn new(rules: &'a Vec<parser::Rule>) -> Result<Self, Error> {
+
+        // let mut pos = BTreeSet::new();
+        // pos.insert(Path{
+        //     import: BTreeSet::new(),
+        //     position: Position{
+        //         rule: 0,
+        //         reductend: 1,
+        //         component: 0
+        //     }
+        // });
+
+        // Self::normalize_header(rules, &mut pos, HashSet::new())?;
+
+        // for path in pos {
+        //     println!("{:?}", path);
+        // }
+        // panic!();
 
         let positions = Positions::from(rules, "start")?;
 
         let mut begin = BTreeSet::new();
         for position in positions {
             begin.insert(Path{
+                // import: BTreeSet::from([Token::EOF]), // import Token::EOF
                 import: BTreeSet::new(),
                 position
             });
         }
+        // normalize header
+        begin = Self::normalize_header(rules, begin)?;
 
         let mut lr = Self{
             rules,
@@ -227,165 +247,120 @@ impl<'a> LR<'a> {
         // lr.add_state(x_position)?;
         Ok(lr)
     }
-    fn insert_or_error<K ,V>(&self, position: &Positions, map: &mut HashMap<K, V>, k: K, v: V) -> Result<(), Error>
-    where
-        K: std::fmt::Debug + PartialEq + Eq + Clone + std::hash::Hash,
-        V: std::fmt::Debug + PartialEq + Eq + Clone
 
-    {
-        if let Some(prev) = map.insert(k.clone(), v.clone()) {
-            let pos_string = position.get_string(self.rules);
-            Err(Error::Error(format!("Error while building map at {}:\nPosition already occupied! {:?}: ({:?}, {:?})",
-                                     pos_string, k, prev, v)))
-
-        } else {
-            Ok(())
-        }
-    }
-
-<<<<<<< HEAD
-    fn expand_set(&self, set: &mut Positions) -> Result<HashMap<IdxRule, Positions>, Error>{
-        let mut entries = HashMap::new();
-        for position in set.clone() {
-            match Self::next_event(&position, self.rules) {
-                Event::Shift(token) => {}
-                Event::Reduce => {}
-                Event::Rule(r) => {
-                    let mut sub = Positions::from(self.rules, &r)?;
-
-                    // remember new Entries
-                    entries.extend(self.expand_set(&mut sub)?);
-                    let positions = entries.entry(Position::rule_index(self.rules, &r)?).or_default();
-                    positions.add(position.next());
-
-                    set.merge(sub);
-=======
     // insert all expected tokens into the Set recursively
-    fn collect_tokens(&self, position: Position, tokens: &mut BTreeSet<Token>, visited: &mut HashSet<Rc<str>>) -> Result<(), Error> {
-        match Self::next_event(&position, self.rules) {
-                Event::Shift(token) => {
-                    tokens.insert(token);
->>>>>>> c254382 (Normailze)
-                }
-                Event::Reduce => {},
-                Event::Rule(r) => {
-                    if !visited.contains(&r){
-                        visited.insert(r);
-                        for pos in Positions::from(self.rules, &r)? {
-                            self.collect_tokens(pos, tokens, visited)?;
-                        }
-                    }
+    fn collect_tokens(rules: &'a Vec<parser::Rule>, position: Position, tokens: &mut BTreeSet<Token>, visited: &mut HashSet<Rc<str>>) -> Result<(), Error> {
+        match Self::next_event(&position, rules) {
+            Event::Shift(token) => {
+                tokens.insert(token);
             }
-        }
-        Ok(entries)
-    }
-
-<<<<<<< HEAD
-    // Elegant Import forwrding?
-    fn build_state(&self, set: Positions, entries: HashMap<IdxRule, Positions>) -> Result<State, Error> {
-
-        let mut state = State{
-            reduce: HashMap::new(),
-            next: HashMap::new(),
-            goto: entries
-        };
-
-        for position in set {
-            match Self::next_event(&position, self.rules) {
-                Event::Shift(token) => {
-                    let mut next_set = state.next.entry(token).or_default();
-                    set.add(position.next());
-                }
-                Event::Reduce => {
-                    // collect possible reductends -> Tokens
-
-                }
-=======
-    // get a set of positions and expands them recursively
-    // returns the normalized set of positions, includeing the parrent nodes (superset of input)
-    fn normalize_header(&self, state_header: &mut BTreeSet<Path>) -> Result<(),Error>{
-        for path in state_header.iter() {
-            match Self::next_event(&path.position, self.rules) {
-                Event::Shift(_) |
-                Event::Reduce => {},
->>>>>>> c254382 (Normailze)
-                Event::Rule(r) => {
-                    // get next tokens :(((
-                    let mut sub = BTreeSet::new();
-                    for pos in Positions::from(self.rules, &r)? {
-                        let mut sub_path = Path{
-                            import: path.import.clone(),
-                            position: pos
-                        };
-                        // import next tokens
-                        self.collect_tokens(path.position.next(), &mut sub_path.import, &mut HashSet::new())?;
-
-                        sub.insert(sub_path);
+            Event::Reduce => {},
+            Event::Rule(r) => {
+                if !visited.contains(&r){
+                    visited.insert(r.clone());
+                    for pos in Positions::from(rules, &r)? {
+                        Self::collect_tokens(rules, pos, tokens, visited)?;
                     }
-                    self.normalize_header(&mut sub)?;
-                    state_header.extend(sub);
                 }
             }
         }
         Ok(())
     }
-<<<<<<< HEAD
 
-    fn make_state(&mut self, mut set: Positions) -> Result<usize, Error> {
-        let entries = self.expand_set(&mut set)?;
-        // check impl
-        self.build_state(set, entries)?;
-=======
-    fn add_state(&self, state_header: BTreeSet<Path>) -> Result<(), Error>{
-        // normalize header
-        self.normalize_header(&mut state_header);
+    // get a set of positions and expands them recursively
+    // returns the normalized set of positions, includeing the parrent nodes (superset of input)
+    fn _normalize_header(rules: &'a Vec<parser::Rule>, expand: BTreeSet<Path>, out: &mut BTreeSet<Path>) -> Result<(),Error>{
+        for path in expand {
+            if out.contains(&path) {
+                continue;
+            }
+            out.insert(path.clone());
+            match Self::next_event(&path.position, rules) {
+                Event::Shift(_) |
+                Event::Reduce => {},
+                Event::Rule(r) => {
+
+                    let mut import = {
+                        let next = Self::next_event(&path.position.next(), rules);
+                        if matches!( next, Event::Reduce){
+                            path.import
+                        }else{
+                            BTreeSet::new()
+                        }
+                    };
+                    // TODO optimize
+                    // Carry the Visited Rules
+                    Self::collect_tokens(rules, path.position.next(), &mut import, &mut HashSet::new())?;
+
+                    let mut sub_expand = BTreeSet::new();
+                    // normalize -> only import if direct
+                    for pos in Positions::from(rules, &r)? {
+                        sub_expand.insert(Path{
+                            import: import.clone(),
+                            position: pos
+                        });
+                    }
+                    Self::_normalize_header(rules, sub_expand, out)?;
+                }
+            }
+        }
+        Ok(())
+    }
+    fn normalize_header(rules: &'a Vec<parser::Rule>, expand: BTreeSet<Path>) -> Result<BTreeSet<Path>, Error>{
+        let mut out = BTreeSet::new();
+        Self::_normalize_header(rules, expand, &mut out)?;
+        Ok(out)
+    }
+    fn add_state(&mut self, norm_header: BTreeSet<Path>) -> Result<(), Error>{
         // Check if implemented
-        if self.state_map.contains_key(&state_header) {
+        if self.state_map.contains_key(&norm_header) {
             return Ok(());
         }
+        // insert State
+        self.state_map.insert(norm_header.clone(), State::default());
+
         // Implement
         let mut state = State{
             goto: HashMap::new(),
             next: HashMap::new(),
             reduce: HashMap::new()
         };
-        for path in state_header {
-            self.impl_path(path, &mut state)?;
+        for path in &norm_header {
+            self.impl_path(&path, &mut state)?;
         }
-
-        // insert State
-        self.state_map.insert(state_header, state);
 
         // Implement Children
-        let children = Vec::new();
+        let mut deps = Vec::new();
 
-        children.extend(state.goto.values());
-        children.extend(state.next.values());
+        deps.extend(state.goto.values_mut());
+        deps.extend(state.next.values_mut());
 
-        for child in children {
-            self.add_state(child.clone())?;
+        for header in deps {
+            *header = Self::normalize_header(self.rules, header.clone())?;
+            self.add_state(header.clone())?;
         }
 
+        self.state_map.insert(norm_header, state);
+
         Ok(())
->>>>>>> c254382 (Normailze)
     }
-    fn impl_path(&self, path: Path, state: &mut State) -> Result<(), Error> {
+    fn impl_path(&self, path: &Path, state: &mut State) -> Result<(), Error> {
 
         match Self::next_event(&path.position, self.rules) {
             Event::Shift(token) => {
                 // append path to next state for token
-                Self::insert_next(&mut state.next, &path, token);
+                Self::insert_next(&mut state.next, path, token);
             }
             Event::Reduce => {
                 // mark imported tokens for reduction
-                for token in path.import {
+                for token in path.import.clone() {
                     state.reduce.insert(token, path.position.clone().into());
                 }
             }
             Event::Rule(r) => {
                 // insert return statements
                 for branch in Positions::from(self.rules, &r)?{
-                    Self::insert_next(&mut state.goto, &path, branch.into());
+                    Self::insert_next(&mut state.goto, path, branch.into());
                 }
             }
         }

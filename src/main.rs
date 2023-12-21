@@ -1,4 +1,5 @@
 use logos::Logos;
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::fs::read_to_string;
 use std::fs::File;
@@ -9,37 +10,24 @@ mod lr;
 mod automaton;
 mod reverseparse;
 
-fn main() {
-    let source = match read_to_string("simple.g") {
-        Ok(s) => s,
-        Err(e) => {
-            panic!("cannot read file!")
-        }
-    };
-    let lex = parser::gTokens::lexer(source.as_str());
-    let ast = match parser::parse(lex) {
-        Ok(ast) => ast,
-        Err(err) => panic!("Error while Parsing: {:?}", err),
-    };
-    println!("Output: {:?}", ast);
-
-    let lr = match lr::LR::new(&ast.rules) {
-        Ok(lr)=>lr,
-        Err(errors) => {
-            println!("Error occured!");
-            println!("{:?}", errors);
-            return;
-        }
-    };
+fn info(lr: &lr::LR, ast: &parser::GAst) {
     // print table
     let mut map = HashMap::new();
     let mut counter = 0;
-    let mut get_insert = |p| {
-        match map.entry(p) {
+    let mut get_insert = |p: BTreeSet<lr::Path>| {
+        match map.entry(p.clone()) {
             std::collections::hash_map::Entry::Occupied(e) => {
                 *e.get()
             }
             std::collections::hash_map::Entry::Vacant(e) => {
+                println!("State {} {{", counter);
+                for path in p {
+                    let import: Vec<lr::Token> = path.import.into_iter().collect();
+                    println!("  pos: {}:{}:{} import: {:?}", path.position.rule,
+                                path.position.reductend,
+                                path.position.component, import);
+                }
+                println!("}}");
                 e.insert(counter);
                 counter+=1;
                 counter-1
@@ -55,8 +43,8 @@ fn main() {
     for (p, s) in &lr.state_map {
         idx.push(get_insert(p.clone()).to_string());
         positions.extend(p.iter().map(|p| p.position.get_string(&ast.rules)));
-        next.extend(s.shift_map.iter().map(|(t, p)| format!("{:?}: {}", t, get_insert(p.clone()))));
-        goto.extend(s.goto_map.iter().map(|(r, p)| format!("{},{}: {}", r.rule, r.reductend, get_insert(p.clone()))));
+        next.extend(s.next.iter().map(|(t, p)| format!("{:?}: {}", t, get_insert(p.clone()))));
+        goto.extend(s.goto.iter().map(|(r, p)| format!("{},{}: {}", r.rule, r.reductend, get_insert(p.clone()))));
         reduce.extend(s.reduce.iter().map(|(t, r)| format!("{:?}: {},{}", t, r.rule, r.reductend)));
 
         let lists = [&mut idx, &mut positions, &mut next, &mut goto, &mut reduce];
@@ -84,6 +72,31 @@ fn main() {
 
         println!("{}", out.join(" | "));
     }
+}
+fn main() {
+    let source = match read_to_string("simple.g") {
+        Ok(s) => s,
+        Err(e) => {
+            panic!("cannot read file!")
+        }
+    };
+    let lex = parser::gTokens::lexer(source.as_str());
+    let ast = match parser::parse(lex) {
+        Ok(ast) => ast,
+        Err(err) => panic!("Error while Parsing: {:?}", err),
+    };
+    println!("Output: {:?}", ast);
+
+    let lr = match lr::LR::new(&ast.rules) {
+        Ok(lr)=>lr,
+        Err(errors) => {
+            println!("Error occured!");
+            println!("{:?}", errors);
+            return;
+        }
+    };
+
+    info(&lr, &ast);
 
     let automaton = match automaton::Automaton::new(&lr) {
         Ok(lr)=>lr,
