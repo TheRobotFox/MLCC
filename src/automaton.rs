@@ -62,7 +62,7 @@ macro_rules! make_automanton {
             automaton: Automaton,
             $($name: HashMap<$f, usize>,)*
             rules: &'a Vec<parser::Rule>,
-            state_map: HashMap<StateImpl, IdxState>,
+            state_map: HashMap<BTreeMap<Position, BTreeSet<Token>>, IdxState>,
 
         }
         impl Automaton {
@@ -130,13 +130,13 @@ impl AutomatonBuilder<'_> {
         Ok(self.automaton)
     }
 
-    fn bake_state(&mut self, lr: &LR, state_header: BTreeSet<Path>) -> Result<IdxState, Error> {
+    fn bake_state(&mut self, lr: &LR, state_header: StateHead) -> Result<IdxState, Error> {
 
         let lr_ref = lr.state_map.get(&state_header).unwrap();
 
         let mut positions = Positions::new();
-        for path in &state_header {
-            positions.add(path.position.clone())
+        for (position, _) in &state_header {
+            positions.add(position.clone())
         }
 
         let state_idx = match self.state_map.entry(state_header) {

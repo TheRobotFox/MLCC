@@ -177,9 +177,11 @@ impl Positions {
     }
 }
 
+pub type StateHead = BTreeMap<Position, BTreeSet<Token>>;
+
 pub struct LR<'a>{
-    pub state_map: HashMap<BTreeSet<Path>, State>,
-    pub start: BTreeSet<Path>,
+    pub state_map: HashMap<StateHead, State>,
+    pub start: StateHead,
     pub rules: &'a Vec<parser::Rule>,
     pub export: Option<Rc<str>>
 }
@@ -197,8 +199,8 @@ pub struct Path{
 
 #[derive(Clone, Default)]
 pub struct State {
-    pub next: HashMap<Token, BTreeSet<Path>>,
-    pub goto: HashMap<ReductendPosition, BTreeSet<Path>>,
+    pub next: HashMap<Token, StateHead>,
+    pub goto: HashMap<ReductendPosition, StateHead>,
     pub reduce: HashMap<Token, ReductendPosition>
 }
 impl<'a> LR<'a> {
@@ -224,16 +226,12 @@ impl<'a> LR<'a> {
 
         let positions = Positions::from(rules, "start")?;
 
-        let mut begin = BTreeSet::new();
+        let mut begin = StateHead::new();
         for position in positions {
-            begin.insert(Path{
-                // import: BTreeSet::from([Token::EOF]), // import Token::EOF
-                import: BTreeSet::new(),
-                position
-            });
+            begin.insert(position, BTreeSet::from([Token::EOF])); // import Token::EOF
         }
         // normalize header
-        begin = Self::normalize_header(rules, begin)?;
+        begin = Self::normalize_head(rules, begin)?;
 
         let mut lr = Self{
             rules,
@@ -269,49 +267,47 @@ impl<'a> LR<'a> {
 
     // get a set of positions and expands them recursively
     // returns the normalized set of positions, includeing the parrent nodes (superset of input)
-    fn _normalize_header(rules: &'a Vec<parser::Rule>, expand: BTreeSet<Path>, out: &mut BTreeSet<Path>) -> Result<(),Error>{
-        for path in expand {
-            if out.contains(&path) {
+    fn _normalize_head(rules: &'a Vec<parser::Rule>, expand: StateHead, out: &mut StateHead) -> Result<(),Error>{
+        for (pos, import) in expand {
+            let out_import = out.entry(pos.clone()).or_default();
+            if import.is_subset(&out_import) {
                 continue;
             }
-            out.insert(path.clone());
-            match Self::next_event(&path.position, rules) {
+            out_import.extend(import.clone());
+            match Self::next_event(&pos, rules) {
                 Event::Shift(_) |
                 Event::Reduce => {},
                 Event::Rule(r) => {
 
                     let mut import = {
-                        let next = Self::next_event(&path.position.next(), rules);
+                        let next = Self::next_event(&pos.next(), rules);
                         if matches!( next, Event::Reduce){
-                            path.import
+                            import
                         }else{
                             BTreeSet::new()
                         }
                     };
                     // TODO optimize
                     // Carry the Visited Rules
-                    Self::collect_tokens(rules, path.position.next(), &mut import, &mut HashSet::new())?;
+                    Self::collect_tokens(rules, pos.next(), &mut import, &mut HashSet::new())?;
 
-                    let mut sub_expand = BTreeSet::new();
-                    // normalize -> only import if direct
-                    for pos in Positions::from(rules, &r)? {
-                        sub_expand.insert(Path{
-                            import: import.clone(),
-                            position: pos
-                        });
-                    }
-                    Self::_normalize_header(rules, sub_expand, out)?;
+                    let sub_expand: StateHead = Positions::from(rules, &r)?
+                                .into_iter()
+                                .map(|p| (p, import.clone()))
+                                .collect();
+
+                    Self::_normalize_head(rules, sub_expand, out)?;
                 }
             }
         }
         Ok(())
     }
-    fn normalize_header(rules: &'a Vec<parser::Rule>, expand: BTreeSet<Path>) -> Result<BTreeSet<Path>, Error>{
-        let mut out = BTreeSet::new();
-        Self::_normalize_header(rules, expand, &mut out)?;
+    fn normalize_head(rules: &'a Vec<parser::Rule>, expand: StateHead) -> Result<StateHead, Error>{
+        let mut out = StateHead::new();
+        Self::_normalize_head(rules, expand, &mut out)?;
         Ok(out)
     }
-    fn add_state(&mut self, norm_header: BTreeSet<Path>) -> Result<(), Error>{
+    fn add_state(&mut self, norm_header: StateHead) -> Result<(), Error>{
         // Check if implemented
         if self.state_map.contains_key(&norm_header) {
             return Ok(());
@@ -325,8 +321,8 @@ impl<'a> LR<'a> {
             next: HashMap::new(),
             reduce: HashMap::new()
         };
-        for path in &norm_header {
-            self.impl_path(&path, &mut state)?;
+        for frag in &norm_header {
+            self.impl_path(frag, &mut state)?;
         }
 
         // Implement Children
@@ -336,7 +332,7 @@ impl<'a> LR<'a> {
         deps.extend(state.next.values_mut());
 
         for header in deps {
-            *header = Self::normalize_header(self.rules, header.clone())?;
+            *header = Self::normalize_head(self.rules, header.clone())?;
             self.add_state(header.clone())?;
         }
 
@@ -344,36 +340,33 @@ impl<'a> LR<'a> {
 
         Ok(())
     }
-    fn impl_path(&self, path: &Path, state: &mut State) -> Result<(), Error> {
+    fn impl_path(&self, frag: (&Position, &BTreeSet<Token>), state: &mut State) -> Result<(), Error> {
 
-        match Self::next_event(&path.position, self.rules) {
+        match Self::next_event(&frag.0, self.rules) {
             Event::Shift(token) => {
                 // append path to next state for token
-                Self::insert_next(&mut state.next, path, token);
+                Self::insert_next(&mut state.next, frag, token);
             }
             Event::Reduce => {
                 // mark imported tokens for reduction
-                for token in path.import.clone() {
-                    state.reduce.insert(token, path.position.clone().into());
+                for token in frag.1.clone() {
+                    state.reduce.insert(token, frag.0.clone().into());
                 }
             }
             Event::Rule(r) => {
                 // insert return statements
                 for branch in Positions::from(self.rules, &r)?{
-                    Self::insert_next(&mut state.goto, path, branch.into());
+                    Self::insert_next(&mut state.goto, frag, branch.into());
                 }
             }
         }
         Ok(())
     }
-    fn insert_next<K>(map: &mut HashMap<K, BTreeSet<Path>>, path: &Path, key: K)
+    fn insert_next<K>(map: &mut HashMap<K, StateHead>, frag: (&Position, &BTreeSet<Token>), key: K)
     where K: Eq + PartialEq + std::hash::Hash
     {
         let next_impl = map.entry(key).or_default();
-        next_impl.insert(Path{
-            position: path.position.next(),
-            import: path.import.clone()
-        });
+        next_impl.insert(frag.0.next(), frag.1.clone());
     }
     fn next_event(position: &Position, rules: &Vec<parser::Rule>) -> Event {
         if let Some(component) = position.get(rules) {
@@ -397,36 +390,3 @@ impl<'a> LR<'a> {
     }
 
 }
-
-
-// A: A a
-//  | A b
-//  | a
-//  | b
-
-// | s | next | goto | reduce     | Notes |
-// |---+------+------+------------+-------|
-// | 0 | a: 1 |  1:3 |            | a     |
-// |   | b: 2 |  2:3 |            | b     |
-// |   |      |  3:5 |            |       |
-// |---+------+------+------------+-------|
-// | 1 |      |      | a:1        | a     |
-// |   |      |      | <import>:3 |       |
-// |---+------+------+------------+-------|
-// | 2 |      |      | b:2        | b     |
-// |   |      |      | <import>:3 |       |
-// |---+------+------+------------+-------|
-// | 3 | a: 4 |  4:3 | <import>:3 | A a   |
-// |   | b: 4 |  4:3 |            | A b   |
-// |---+------+------+------------+-------|
-// | 4 |      |      | a:4        | A a   |
-// |   |      |      | b:4        | A b   |
-// |   |      |      | <import>:4 |       |
-// |---+------+------+------------+-------|
-// | 5 | ***  |      |            |       |
-// *OK*
-
-// A: a -> next a import
-// A: b -> next b import
-// A: A a -> return
-// A: A b -> return

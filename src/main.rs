@@ -14,18 +14,18 @@ fn info(lr: &lr::LR, ast: &parser::GAst) {
     // print table
     let mut map = HashMap::new();
     let mut counter = 0;
-    let mut get_insert = |p: BTreeSet<lr::Path>| {
+    let mut get_insert = |p: lr::StateHead | {
         match map.entry(p.clone()) {
             std::collections::hash_map::Entry::Occupied(e) => {
                 *e.get()
             }
             std::collections::hash_map::Entry::Vacant(e) => {
                 println!("State {} {{", counter);
-                for path in p {
-                    let import: Vec<lr::Token> = path.import.into_iter().collect();
-                    println!("  pos: {}:{}:{} import: {:?}", path.position.rule,
-                                path.position.reductend,
-                                path.position.component, import);
+                for (position, import) in p {
+                    let import: Vec<lr::Token> = import.into_iter().collect();
+                    println!("  pos: {}:{}:{} import: {:?}", position.rule,
+                                position.reductend,
+                                position.component, import);
                 }
                 println!("}}");
                 e.insert(counter);
@@ -42,7 +42,7 @@ fn info(lr: &lr::LR, ast: &parser::GAst) {
 
     for (p, s) in &lr.state_map {
         idx.push(get_insert(p.clone()).to_string());
-        positions.extend(p.iter().map(|p| p.position.get_string(&ast.rules)));
+        positions.extend(p.iter().map(|(position, _)| position.get_string(&ast.rules)));
         next.extend(s.next.iter().map(|(t, p)| format!("{:?}: {}", t, get_insert(p.clone()))));
         goto.extend(s.goto.iter().map(|(r, p)| format!("{},{}: {}", r.rule, r.reductend, get_insert(p.clone()))));
         reduce.extend(s.reduce.iter().map(|(t, r)| format!("{:?}: {},{}", t, r.rule, r.reductend)));
