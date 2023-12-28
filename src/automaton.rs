@@ -166,7 +166,7 @@ impl AutomatonBuilder<'_> {
 
             let t = vecmap!(self, terminals, token);
             if let Some(prev) = state.lookahead.insert(t, Action::Reduce(reduction)) {
-                return Err(Error::Error(String::from("Ambiguous grammar! Not LR")))
+                return Err(Error::Error(format!("Ambiguous grammar! Not LR {:?}", prev)))
             }
         }
 
@@ -206,7 +206,7 @@ impl AutomatonBuilder<'_> {
                             | parser::Component0::Terminal(_)
                             | parser::Component0::Token => "&str".into(), // advanced Types
                             parser::Component0::Rule(r) => {
-                                Position::rule_ref(self.rules, &r)?.export.clone().ok_or_else(|| todo!())? // induce
+                                Position::rule_ref(self.rules, &r)?.export.clone().ok_or_else(||{println!("{:?}", r);todo!()})? // induce
                             }
                         };
                         Some(Arg{identifier: identifier.clone(), arg_type})

@@ -74,7 +74,7 @@ fn info(lr: &lr::LR, ast: &parser::GAst) {
     }
 }
 fn main() {
-    let source = match read_to_string("simple.g") {
+    let source = match read_to_string("gramma.g") {
         Ok(s) => s,
         Err(e) => {
             panic!("cannot read file!")

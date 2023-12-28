@@ -1,4 +1,3 @@
-$ast: gAst;
 
 start: STMT=handle
 	   {
@@ -27,12 +26,12 @@ Statement: Member=m { Statement::Member(m) }
 Member: "$" Identifier=name ":" Identifier=member_type { Member{name, member_type} }
 	  ->Member;
 
-Rule: Identifier=name ":" Reductends=reductents "->" Identifier { Rule{name, Reductends{reductends}} }
+Rule: Identifier=name ":" Reductends=reductents "->" Identifier=export { Rule{name, reductends: Reductends{reductends}}, export: Some(export) }
 	->Rule;
 
-Reductends: Reductends=stack "|" Components=handle	{ stack.push(Components{handle, code}); stack }
-		  | Components=handle						{ vec![Components{handle, code}] }
-		  ->Vec<Components>;
+Reductends: Reductends=stack "|" Reductend=rd	{ stack.reductends.push(rd); stack }
+		  | Reductend=rd						{ Reductends{reductends: vec![rd]} }
+		  ->Reductends;
 
 Reductend: Components=c				{ Reductend{components: c, code: None} }
 		 | Components=c Code=code	{ Reductend{components: c, code: Some(code)} }
@@ -55,13 +54,14 @@ Handle: Identifier=s { Component0::Identifier(s) }
 Assign: "=" Identifier=var { var }
 	  ->String;
 
-Identifier: r"[a-zA-Z0-9_]+";
+Identifier: r"[a-zA-Z0-9_]+"
+	-> String;
 
 Code: "{" Code1=c "}" { "{"+c+"}" }
 	-> String;
 
-code1: Code1=a Code1=b { a+b }
-	 | *=t { t }
+Code1: Code1=a Code=b { a+b }
+	 | r"[^{}]+"=t {t}
 	 | Code=c { c }
 	 ->String;
 // must contain
@@ -72,11 +72,14 @@ Type: Identifier=i Generics { i+& }
 
 Generics: "<" Generics=g ">" { g }
 		| Generics=a Generics=b { a+b }
-		| *=t {t}
+		| r"[^<>]+"=t {t}
 		-> String;
 
-Terminal: r"\"([^\"\\]|\\.)*\"";
-Regex: r"r\"([^\"\\]|\\.)*\"";
-Comment: r"//[^\n]";
+Terminal: r"\"([^\"\\]|\\.)*\""
+		-> String;
+Regex: r"r\"([^\"\\]|\\.)*\""
+		-> String;
+Comment: r"//[^\n]"
+		-> String;
 
 // TODO: Advanced Lexer
