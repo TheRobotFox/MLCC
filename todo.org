@@ -1,0 +1,4 @@
+* Inbox
+** TODO Generate own Parser
+
+[[file:~/projects/MLCC/gramma.g::->Reductend;]]
