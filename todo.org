@@ -1,4 +1,8 @@
 * Inbox
+** TODO Design Auto-Struct/Integrated Regex Grammar
+** TODO Multi Lexer
+
+[[file:~/projects/MLCC/src/reverseparse.rs::\[derive(Debug)\]]]
 ** TODO Generate own Parser
 
 [[file:~/projects/MLCC/gramma.g::->Reductend;]]

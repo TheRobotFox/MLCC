@@ -1,3 +1,4 @@
+use crate::lr::Error;
 // compile all regexes into function
 // scan(str){
 //   for each char {
@@ -18,13 +19,57 @@
 
 // finite State Automaton
 
-use std::collections::BTreeMap;
+use std::collections::{HashMap, BTreeSet};
 
-type RegexState = BTreeMap<char, usize>;
-pub struct Regex{
-    states: Vec<RegexState>
+#[derive(Default)]
+struct State{
+    result: usize,
+    next: HashMap<char, usize>
 }
 
-impl Regex {
-    fn new(regex)
+pub struct DFA{
+    states: Vec<State>,
+    /*
+     * 1. Collect all possible tokens as strings => DFA
+     * 2. Read Quirks (usize) -> try to resolve Quirks
+     */
+    quirks: HashMap<BTreeSet<String>, usize>,
+    out_count: usize
+}
+
+impl DFA {
+    pub fn new(list_regex: Vec<String>) -> Result<DFA, Error>
+    {
+        let mut dfa = DFA{
+            states: Vec::new(),
+            quirks: HashMap::new(),
+            out_count: 0
+        };
+        for regex in list_regex {
+            dfa.impl_regex_at(regex, 0)?;
+        }
+        Ok(dfa)
+    }
+    fn impl_regex_at(&mut self, regex: String, start: usize) -> Result<(), Error> {
+
+        let state = match self.states.get_mut(start){
+            Some(state) =>state,
+            None =>{
+                self.states.push(State::default());
+                self.states.get_mut(start).unwrap()
+            }
+        };
+
+        enum States{
+            Normal,
+            Group,
+
+        }
+
+        for c in regex {
+
+        }
+
+        Ok(())
+    }
 }

@@ -1,0 +1,29 @@
+* Inbox
+** [2024-01-03 Mi 04:02] Seperate LExer redundent?
+
+*** Points for Integrated Lexer
+| Pro                | Contra                 |
+|--------------------+------------------------|
+| Elegant            | Large Parse Table      |
+| Generalized Regex  | Regex Runtime Overhead |
+| Single Parse Table | Compilation Speed      |
+| Maintainability    |                        |
+| Innovative         |                        |
+
+**** Fixes
+- Parse Table Size ::
+  The Parse Table Size could be accommodated for with Parse Table Compression.
+
+*** Points for Seperate Lexer
+| Pro                       | Contra                  |
+|---------------------------+-------------------------|
+| Smaller Parse Table       | Redundancy              |
+| Performance benefit       | Many Extra Tables       |
+| Traditional Regex support | cache Inefficiency      |
+|                           | Clunky interoperability |
+
+*** Conclusion
+I think i want to try the Integrated Lexer. It feels more Elegant and less Hacky than providing a map from state to Lexers,
+Implementing "Regexy" Features into the Parse Grammar would integrate nicely with auto struct generation
+
+[[file:~/projects/MLCC/regex.g]]

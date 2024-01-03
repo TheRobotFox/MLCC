@@ -9,6 +9,7 @@ mod parser;
 mod lr;
 mod automaton;
 mod reverseparse;
+mod regex;
 
 fn info(lr: &lr::LR, ast: &parser::GAst) {
     // print table
@@ -35,10 +36,10 @@ fn info(lr: &lr::LR, ast: &parser::GAst) {
         }
     };
     let mut positions = vec!["Positions".to_string()];
-    let mut idx = vec!["Idx".to_string()];
-    let mut next = vec!["Next".to_string()];
-    let mut goto = vec!["Return".to_string()];
-    let mut reduce = vec!["Reduce".to_string()];
+    let mut idx       = vec!["Idx"      .to_string()];
+    let mut next      = vec!["Next"     .to_string()];
+    let mut goto      = vec!["Return"   .to_string()];
+    let mut reduce    = vec!["Reduce"   .to_string()];
 
     for (p, s) in &lr.state_map {
         idx.push(get_insert(p.clone()).to_string());
@@ -74,7 +75,7 @@ fn info(lr: &lr::LR, ast: &parser::GAst) {
     }
 }
 fn main() {
-    let source = match read_to_string("gramma.g") {
+    let source = match read_to_string("regex.g") {
         Ok(s) => s,
         Err(e) => {
             panic!("cannot read file!")

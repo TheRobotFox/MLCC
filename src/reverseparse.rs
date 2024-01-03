@@ -2,7 +2,68 @@ use crate::{lr, automaton::{self, Action}, };
 use std::collections::HashMap;
 
 pub fn export(automaton: &automaton::Automaton) -> String {
-    let mut content = String::new();
+    let mut content = String::from(r#"
+#[derive(Debug)]
+pub enum Statement {
+    Rule(Rule),
+    Member(Member),
+}
+
+#[derive(Debug)]
+pub struct Member {
+    pub name: Rc<str>,
+    pub member_type: Rc<str>,
+}
+
+#[derive(Debug)]
+pub struct Rule {
+    pub identifier: Rc<str>,
+    pub reductends: Reductends,
+    pub export: Option<Rc<str>>,
+}
+
+#[derive(Debug)]
+pub struct Reductends {
+    pub reductends: Vec<Reductend>,
+}
+
+#[derive(Debug)]
+pub struct Reductend {
+    pub components: Components,
+    pub code: Option<Rc<str>>,
+}
+#[derive(Debug)]
+pub struct Components {
+    pub components: Vec<Component>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Component0 {
+    Rule(Rc<str>),
+    Terminal(Rc<str>),
+    Regex(Rc<str>),
+    Token,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Component {
+    pub handle: Component0,
+    pub var: Option<Rc<str>>,
+}
+
+#[derive(Debug)]
+pub struct Mods {
+    assign: Option<Rc<str>>,
+    code: Option<Rc<str>>,
+    option: Option<(Rc<str>, Rc<str>)>,
+}
+
+#[derive(Debug)]
+pub struct GAst {
+    pub members: Vec<Member>,
+    pub rules: Vec<Rule>,
+}
+"#);
 
     //generate Regex
     content += "use logos::Logos;\n";
