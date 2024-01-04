@@ -19,7 +19,7 @@ use crate::lr::Error;
 
 // finite State Automaton
 
-use std::collections::{HashMap, BTreeSet};
+use std::{collections::{HashMap, BTreeSet, HashSet}, rc::Rc};
 
 #[derive(Default)]
 struct State{
@@ -33,24 +33,25 @@ pub struct DFA{
      * 1. Collect all possible tokens as strings => DFA
      * 2. Read Quirks (usize) -> try to resolve Quirks
      */
-    quirks: HashMap<BTreeSet<String>, usize>,
-    out_count: usize
+    map: Vec<HashSet<Rc<str>>>
 }
 
 impl DFA {
-    pub fn new(list_regex: Vec<String>) -> Result<DFA, Error>
+    // collect all tokens and create DFA
+    // obtain possible outputs from results list
+    // for r in map if token in r -> insert
+    pub fn new(list_regex: Vec<Rc<str>>) -> Result<DFA, Error>
     {
         let mut dfa = DFA{
             states: Vec::new(),
-            quirks: HashMap::new(),
-            out_count: 0
+            map: Vec::new()
         };
         for regex in list_regex {
             dfa.impl_regex_at(regex, 0)?;
         }
         Ok(dfa)
     }
-    fn impl_regex_at(&mut self, regex: String, start: usize) -> Result<(), Error> {
+    fn impl_regex_at(&mut self, regex: Rc<str>, start: usize) -> Result<(), Error> {
 
         let state = match self.states.get_mut(start){
             Some(state) =>state,
@@ -66,7 +67,7 @@ impl DFA {
 
         }
 
-        for c in regex {
+        for c in regex.chars() {
 
         }
 

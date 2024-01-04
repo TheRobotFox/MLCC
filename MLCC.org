@@ -1,0 +1,9 @@
+#+title: Mlcc
+
+* [ ] WORK
+** [ ] [#C] TODO Remove duplicates
+final Automaton implements paths multiple times
+** [ ] [#C] TODO Compress Parse Table
+** [ ] [#C] TODO Implement AstT(L)
+** [ ] [#A] TODO Test Generator
+** [ ] [#A] TODO New Parser Algorithm

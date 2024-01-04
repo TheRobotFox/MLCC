@@ -1,6 +1,5 @@
-use crate::parser::{self, Components};
+use crate::parser;
 use std::{rc::Rc, collections::{HashMap, BTreeMap, BTreeSet, HashSet}};
-use std::collections::hash_map::Entry;
 
 type IdxRule = usize;
 
@@ -206,23 +205,6 @@ pub struct State {
 impl<'a> LR<'a> {
 
     pub fn new(rules: &'a Vec<parser::Rule>) -> Result<Self, Error> {
-
-        // let mut pos = BTreeSet::new();
-        // pos.insert(Path{
-        //     import: BTreeSet::new(),
-        //     position: Position{
-        //         rule: 0,
-        //         reductend: 1,
-        //         component: 0
-        //     }
-        // });
-
-        // Self::normalize_header(rules, &mut pos, HashSet::new())?;
-
-        // for path in pos {
-        //     println!("{:?}", path);
-        // }
-        // panic!();
 
         let positions = Positions::from(rules, "start")?;
 
