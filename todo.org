@@ -6,3 +6,23 @@
 ** TODO Generate own Parser
 
 [[file:~/projects/MLCC/gramma.g::->Reductend;]]
+** TODO Compress Headers with BTreeMaps
+
+BTreeSet<Path> -> BTreeMap<Position, BTreeSet<Token>>
+
+[[file:~/projects/MLCC/src/lr.rs::fn normalize_header(rules: &'a Vec<parser::Rule>, expand: BTreeSet<Path>) -> Result<BTreeSet<Path>, Error>{]]
+** [X] Insert EOF Token in start state
+                            if path.import.is_empty(){
+                            BTreeSet::from([Token::EOF])
+                            } else {
+                                path.import
+                            }
+
+[[file:~/projects/MLCC/src/lr.rs::if path.import.is_empty(){
+ BTreeSet::from(\[Token::EOF\])
+ } else {
+ path.import
+ }]]
+** [X] dont store unnormalized headers in states
+
+[[file:~/projects/MLCC/src/lr.rs::fn add_state(&mut self, mut state_header: BTreeSet<Path>) -> Result<(), Error>{]]
