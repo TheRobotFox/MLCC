@@ -1,4 +1,20 @@
 * Inbox
+** [2024-01-07 So 13:31] Define Weak Tokens
+
+Weak tokens are ignored if they'd cause an error, but can still be consumed by if needed
+
+[[file:~/projects/MLCC/src/parser.rs]]
+** [2024-01-05 Fr 16:14] Lexer Process
+
+1. Collect all Tokens
+2. Generate Lexer from all tokens
+   - DFA Table :: State(resolve?, next(char)->State)
+   - Output Map :: Output->Token[]
+   - s/r conflicts :: Error Type
+3. NFA Collapse using the Lexer Map function (might increase branching)
+4. Generated Lexer function takes the State map as argument to filter invalid outputs
+
+[[file:~/projects/MLCC/src/lexer.rs::2. Read Quirks (usize) -> try to resolve Quirks]]
 ** [2024-01-03 Mi 04:02] Seperate LExer redundent?
 
 *** Points for Integrated Lexer

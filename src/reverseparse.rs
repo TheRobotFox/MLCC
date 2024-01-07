@@ -2,78 +2,85 @@ use crate::{lr, automaton::{self, Action}, };
 use std::collections::HashMap;
 
 pub fn export(automaton: &automaton::Automaton) -> String {
-//     let mut content = String::from(r#"
-// #[derive(Debug)]
-// pub enum Statement {
-//     Rule(Rule),
-//     Member(Member),
-// }
-
-// #[derive(Debug)]
-// pub struct Member {
-//     pub name: Rc<str>,
-//     pub member_type: Rc<str>,
-// }
-
-// #[derive(Debug)]
-// pub struct Rule {
-//     pub identifier: Rc<str>,
-//     pub reductends: Reductends,
-//     pub export: Option<Rc<str>>,
-// }
-
-// #[derive(Debug)]
-// pub struct Reductends {
-//     pub reductends: Vec<Reductend>,
-// }
-
-// #[derive(Debug)]
-// pub struct Reductend {
-//     pub components: Components,
-//     pub code: Option<Rc<str>>,
-// }
-// #[derive(Debug)]
-// pub struct Components {
-//     pub components: Vec<Component>,
-// }
-
-// #[derive(Debug, PartialEq, Eq)]
-// pub enum Component0 {
-//     Rule(Rc<str>),
-//     Terminal(Rc<str>),
-//     Regex(Rc<str>),
-//     Token,
-// }
-
-// #[derive(Debug, PartialEq, Eq)]
-// pub struct Component {
-//     pub handle: Component0,
-//     pub var: Option<Rc<str>>,
-// }
-
-// #[derive(Debug)]
-// pub struct Mods {
-//     assign: Option<Rc<str>>,
-//     code: Option<Rc<str>>,
-//     option: Option<(Rc<str>, Rc<str>)>,
-// }
-
-// #[derive(Debug)]
-// pub struct GAst {
-//     pub members: Vec<Member>,
-//     pub rules: Vec<Rule>,
-// }
-// "#);
     let mut content = String::from(r#"
-enum Term{
-NGroup(Vec<char>),
+use std::rc::Rc;
+#[derive(Debug)]
+pub enum Statement {
+    Rule(Rule),
+    Member(Member),
 }
-enum Regexpr{
-    Match(Term),
-    Maybe(Term),
-    Any(Term)
+
+#[derive(Debug)]
+pub struct Member {
+    pub name: Rc<str>,
+    pub member_type: Rc<str>,
+}
+
+#[derive(Debug)]
+pub struct Rule {
+    pub identifier: Rc<str>,
+    pub reductends: Reductends,
+    pub export: Option<Rc<str>>,
+}
+
+#[derive(Debug)]
+pub struct Reductends {
+    pub reductends: Vec<Reductend>,
+}
+
+#[derive(Debug)]
+pub struct Reductend {
+    pub components: Components,
+    pub code: Option<Rc<str>>,
+}
+#[derive(Debug)]
+pub struct Components {
+    pub components: Vec<Component>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Component0 {
+    Rule(Rc<str>),
+    Terminal(Rc<str>),
+    Regex(Rc<str>),
+    Token,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Component {
+    pub handle: Component0,
+    pub var: Option<Rc<str>>,
+}
+
+#[derive(Debug)]
+pub struct Mods {
+    assign: Option<Rc<str>>,
+    code: Option<Rc<str>>,
+    option: Option<(Rc<str>, Rc<str>)>,
+}
+
+#[derive(Debug)]
+pub struct GAst {
+    pub members: Vec<Member>,
+    pub rules: Vec<Rule>,
 }
 "#);
+//     let mut content = String::from(r#"
+// #[derive(Debug, Clone)]
+// enum Term{
+// NGroup(Vec<char>),
+// Group(Vec<char>),
+// Pattern(Vec<Regexpr>),
+// Char(char),
+// Or(Vec<Regexpr>, Vec<Regexpr>)
+// }
+// #[derive(Debug, Clone)]
+// enum Regexpr{
+//     Match(Term),
+//     Maybe(Term),
+//     Any(Term)
+// }
+// "#);
 
     //generate Regex
     content += "use logos::Logos;\n";
@@ -237,7 +244,19 @@ enum Regexpr{
                     push!(parser, T1, parser.lexer.slice());
                     token = match parser.lexer.next() {{
                         Some(Ok(t)) => t as usize,
-                        Some(Err(e)) => panic!("{{:?}}", e),
+            Some(Err(e)) =>{{
+                let mut line=0;
+                let mut offset=0;
+                let span = parser.lexer.span();
+                for c in parser.lexer.source().slice(0..span.end).unwrap().chars(){{
+                    if(c=='\n'){{
+                        offset=0;
+                        line+=1;
+                    }}
+                }}
+
+                panic!("Unexpected Token {{:?}} ({{:?}}) at {{}}:{{}}", e, parser.lexer.slice(), line, offset);
+            }},
                         None => 0
                     }};
                     continue;
@@ -258,9 +277,9 @@ enum Regexpr{
         if parser.state_stack.len() != 1 {{
             panic!("Parsing failed! {{:?}} {{:?}}", parser.parse_stack, parser.state_stack);
         }} else {{
-            match parser.parse_stack.first().unwrap() {{
-                Types::T2(s) => s.clone(),
-                _ => panic!("Parsing failed! {{:?}}", parser.parse_stack)
+            match parser.parse_stack.into_iter().nth(0).unwrap() {{
+                Types::T12(s) => s,
+                t@ _ => panic!("Parsing failed! {{:?}}", t)
 
             }}
         }}
@@ -286,12 +305,15 @@ enum Regexpr{
 
     content += r#"
 fn main() {
-    let mut string = String::new();
-    let _ = std::io::stdin().read_line(&mut string);
-    println!("Input: {:?}", &string);
-    let string = string.trim();
-    let lex = Token::lexer(string);
-    println!("Result: {}", Parser::parse(lex));
+    let source = match read_to_string("gramma.g") {
+        Ok(s) => s,
+        Err(e) => {
+            panic!("cannot read file!")
+        }
+    };
+    // println!("Input: {:?}", &string);
+    let lex = Token::lexer(&source);
+    println!("Result: {:?}", Parser::parse(lex));
 }"#;
 
     content

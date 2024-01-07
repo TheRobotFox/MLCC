@@ -21,6 +21,21 @@ use crate::lr::Error;
 
 use std::{collections::{HashMap, BTreeSet, HashSet}, rc::Rc};
 
+#[derive(Debug, Clone)]
+enum Term{
+    NGroup(Vec<char>),
+    Group(Vec<char>),
+    Pattern(Vec<Regexpr>),
+    Char(char),
+    Or(Vec<Regexpr>, Vec<Regexpr>)
+}
+#[derive(Debug, Clone)]
+enum Regexpr{
+    Match(Term),
+    Maybe(Term),
+    Any(Term)
+}
+
 #[derive(Default)]
 struct State{
     result: usize,
