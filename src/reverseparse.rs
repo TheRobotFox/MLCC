@@ -2,85 +2,85 @@ use crate::{lr, automaton::{self, Action}, };
 use std::collections::HashMap;
 
 pub fn export(automaton: &automaton::Automaton) -> String {
-    let mut content = String::from(r#"
-use std::rc::Rc;
-#[derive(Debug)]
-pub enum Statement {
-    Rule(Rule),
-    Member(Member),
-}
-
-#[derive(Debug)]
-pub struct Member {
-    pub name: Rc<str>,
-    pub member_type: Rc<str>,
-}
-
-#[derive(Debug)]
-pub struct Rule {
-    pub identifier: Rc<str>,
-    pub reductends: Reductends,
-    pub export: Option<Rc<str>>,
-}
-
-#[derive(Debug)]
-pub struct Reductends {
-    pub reductends: Vec<Reductend>,
-}
-
-#[derive(Debug)]
-pub struct Reductend {
-    pub components: Components,
-    pub code: Option<Rc<str>>,
-}
-#[derive(Debug)]
-pub struct Components {
-    pub components: Vec<Component>,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum Component0 {
-    Rule(Rc<str>),
-    Terminal(Rc<str>),
-    Regex(Rc<str>),
-    Token,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct Component {
-    pub handle: Component0,
-    pub var: Option<Rc<str>>,
-}
-
-#[derive(Debug)]
-pub struct Mods {
-    assign: Option<Rc<str>>,
-    code: Option<Rc<str>>,
-    option: Option<(Rc<str>, Rc<str>)>,
-}
-
-#[derive(Debug)]
-pub struct GAst {
-    pub members: Vec<Member>,
-    pub rules: Vec<Rule>,
-}
-"#);
 //     let mut content = String::from(r#"
-// #[derive(Debug, Clone)]
-// enum Term{
-// NGroup(Vec<char>),
-// Group(Vec<char>),
-// Pattern(Vec<Regexpr>),
-// Char(char),
-// Or(Vec<Regexpr>, Vec<Regexpr>)
+// use std::rc::Rc;
+// #[derive(Debug)]
+// pub enum Statement {
+//     Rule(Rule),
+//     Member(Member),
 // }
-// #[derive(Debug, Clone)]
-// enum Regexpr{
-//     Match(Term),
-//     Maybe(Term),
-//     Any(Term)
+
+// #[derive(Debug)]
+// pub struct Member {
+//     pub name: Rc<str>,
+//     pub member_type: Rc<str>,
+// }
+
+// #[derive(Debug)]
+// pub struct Rule {
+//     pub identifier: Rc<str>,
+//     pub reductends: Reductends,
+//     pub export: Option<Rc<str>>,
+// }
+
+// #[derive(Debug)]
+// pub struct Reductends {
+//     pub reductends: Vec<Reductend>,
+// }
+
+// #[derive(Debug)]
+// pub struct Reductend {
+//     pub components: Components,
+//     pub code: Option<Rc<str>>,
+// }
+// #[derive(Debug)]
+// pub struct Components {
+//     pub components: Vec<Component>,
+// }
+
+// #[derive(Debug, PartialEq, Eq)]
+// pub enum Component0 {
+//     Rule(Rc<str>),
+//     Terminal(Rc<str>),
+//     Regex(Rc<str>),
+//     Token,
+// }
+
+// #[derive(Debug, PartialEq, Eq)]
+// pub struct Component {
+//     pub handle: Component0,
+//     pub var: Option<Rc<str>>,
+// }
+
+// #[derive(Debug)]
+// pub struct Mods {
+//     assign: Option<Rc<str>>,
+//     code: Option<Rc<str>>,
+//     option: Option<(Rc<str>, Rc<str>)>,
+// }
+
+// #[derive(Debug)]
+// pub struct GAst {
+//     pub members: Vec<Member>,
+//     pub rules: Vec<Rule>,
 // }
 // "#);
+    let mut content = String::from(r#"
+#[derive(Debug, Clone)]
+    enum Term{
+    NGroup(Vec<char>),
+    Group(Vec<char>),
+    Pattern(Vec<Regexpr>),
+    Char(char),
+    Or(Vec<Regexpr>, Vec<Regexpr>)
+}
+#[derive(Debug, Clone)]
+enum Regexpr{
+    Match(Term),
+    Maybe(Term),
+    Any(Term)
+}
+"#);
 
     //generate Regex
     content += "use logos::Logos;\n";
@@ -215,6 +215,8 @@ pub struct GAst {
         }
     }
 
+    let export_type =automaton.export.clone().unwrap_or("".into());
+
     content += format!(r#"
     fn parse(lex: logos::Lexer<'a, Token>) -> {} {{
         let mut parser = Self{{
@@ -248,7 +250,7 @@ pub struct GAst {
                 let mut line=0;
                 let mut offset=0;
                 let span = parser.lexer.span();
-                for c in parser.lexer.source().slice(0..span.end).unwrap().chars(){{
+                for c in parser.lexer.source()[0..span.end].chars(){{
                     if(c=='\n'){{
                         offset=0;
                         line+=1;
@@ -278,13 +280,13 @@ pub struct GAst {
             panic!("Parsing failed! {{:?}} {{:?}}", parser.parse_stack, parser.state_stack);
         }} else {{
             match parser.parse_stack.into_iter().nth(0).unwrap() {{
-                Types::T12(s) => s,
+                Types::T{}(s) => s,
                 t@ _ => panic!("Parsing failed! {{:?}}", t)
 
             }}
         }}
     }}
-"#, automaton.export.clone().unwrap_or("".into()), reductions).as_str();
+"#, export_type.clone(), reductions, get_type(export_type)).as_str();
 
     content += "}\n\n";
     // types
@@ -304,6 +306,7 @@ pub struct GAst {
     content+= "\n}\n\n";
 
     content += r#"
+use std::fs::read_to_string;
 fn main() {
     let source = match read_to_string("gramma.g") {
         Ok(s) => s,
