@@ -9,7 +9,7 @@ mod parser;
 mod lr;
 mod automaton;
 mod reverseparse;
-mod lexer;
+// mod lexer;
 
 fn info(lr: &lr::LR, ast: &parser::GAst) {
     // print table
@@ -46,7 +46,9 @@ fn info(lr: &lr::LR, ast: &parser::GAst) {
         positions.extend(p.iter().map(|(position, _)| position.get_string(&ast.rules)));
         next.extend(s.next.iter().map(|(t, p)| format!("{:?}: {}", t, get_insert(p.clone()))));
         goto.extend(s.goto.iter().map(|(r, p)| format!("{},{}: {}", r.rule, r.reductend, get_insert(p.clone()))));
-        reduce.extend(s.reduce.iter().map(|(t, r)| format!("{:?}: {},{}", t, r.rule, r.reductend)));
+        for (t,r) in s.reduce.iter() {
+            reduce.extend(r.iter().map(|r| format!("{:?}: {},{}", t, r.rule, r.reductend)));
+        }
 
         let lists = [&mut idx, &mut positions, &mut next, &mut goto, &mut reduce];
 

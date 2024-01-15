@@ -1,4 +1,5 @@
 // @Parser{
+
 start: Regex=r "!" {r}
      -> Vec<Regexpr>;
 
@@ -22,13 +23,20 @@ Pattern: Regex=r {Term::Pattern(r)}
     |    Regex=a "|" Regex=b {Term::Or(a,b)}
     -> Term;
 
-SYMS: SYMS=stack SYM=s {stack.push(s); stack}
-    | SYM=s {vec![s]} ->Vec<char>;
+SYMS: SYMS=stack SYM=s {stack.extend(s); stack}
+    | SYM=s {s} ->Vec<char>;
 
-SYM: r"[^\[\]\(\)\.\\\+\*\|\?]"=s {s.chars().next().unwrap()}
+SYM: CHR=c {vec![c]}
+   | CHR=a "-" CHR=b {a..b.collect()}
+   -> Vec<char>;
+
+CHR: r"[^\[\]\(\)\.\\\+\*\|\?]"=s {s.chars().next().unwrap()}
+   | r"\\[\[\]\(\)\.\\\+\*\|\?]"=s {s.chars().nth(1).unwrap()}
     -> char;
 
 // }->MLCC(Gast)->{
  // [Astt]
 // }
 // replace that with result
+
+// {input} -> {Parser} -> [{Astt}] => ast als compile time constant \_(o.o)/-

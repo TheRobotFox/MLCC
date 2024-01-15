@@ -1,4 +1,19 @@
 * Inbox
+** TODO Global Variable
+
+"$IDENT"
+
+either in gobal scope or in structured definition
+
+- Global Variable has to be initlizied;
+- capture on reduction and reset value
+
+[[file:~/projects/MLCC/src/lexer.rs::index: usize]]
+** TODO Refactor NDA Collapse
+
+implement Regex NDA Collapse
+
+[[file:~/projects/MLCC/src/lexer.rs:://]]
 ** TODO Design Auto-Struct/Integrated Regex Grammar
 ** TODO Multi Lexer
 

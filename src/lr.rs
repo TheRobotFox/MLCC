@@ -200,7 +200,7 @@ pub struct Path{
 pub struct State {
     pub next: HashMap<Token, StateHead>,
     pub goto: HashMap<ReductendPosition, StateHead>,
-    pub reduce: HashMap<Token, ReductendPosition>
+    pub reduce: HashMap<Token, BTreeSet<ReductendPosition>>
 }
 impl<'a> LR<'a> {
 
@@ -332,7 +332,9 @@ impl<'a> LR<'a> {
             Event::Reduce => {
                 // mark imported tokens for reduction
                 for token in frag.1.clone() {
-                    state.reduce.insert(token, frag.0.clone().into());
+                    let set = state.reduce.entry(token).or_default();
+                    set.insert(frag.0.clone().into());
+
                 }
             }
             Event::Rule(r) => {

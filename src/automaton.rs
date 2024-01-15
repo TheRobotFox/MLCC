@@ -161,7 +161,12 @@ impl AutomatonBuilder<'_> {
         }
 
         // Bake Reduce
-        for (token, reductend) in lr_ref.reduce.clone() {
+        for (token, reductend_set) in lr_ref.reduce.clone() {
+            let reductend = if reductend_set.len()==1 {
+                reductend_set.into_iter().nth(0).unwrap()
+            } else {
+                return Err(Error::Error(format!("R/R error!")));
+            };
             let reduction = self.make_reduction(reductend)?;
 
             let t = vecmap!(self, terminals, token);
