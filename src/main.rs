@@ -9,7 +9,7 @@ mod parser;
 mod lr;
 mod automaton;
 mod reverseparse;
-// mod lexer;
+mod lexer;
 
 fn info(lr: &lr::LR, ast: &parser::GAst) {
     // print table

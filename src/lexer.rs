@@ -1,12 +1,15 @@
 use crate::lr::Error;
 
+//TODO Replace Impl with Global Variables
 #[derive(Debug, Clone)]
     enum Term{
     NGroup(Vec<char>),
     Group(Vec<char>),
     Pattern(Vec<Regexpr>),
+    PatternImpl(usize),
     Char(char),
-    Or(Vec<Regexpr>, Vec<Regexpr>)
+    Or(Vec<Regexpr>, Vec<Regexpr>),
+    OrImpl(usize, usize)
 }
 #[derive(Debug, Clone)]
 enum Regexpr{
@@ -477,6 +480,18 @@ struct State{
     next: HashMap<Term, usize>
 }
 
+impl Regexpr {
+    fn get(&mut self) -> &mut Term {
+        match self {
+            Regexpr::Any(t)
+            | Regexpr::Match(t)
+            | Regexpr::Maybe(t) => t,
+            _ => panic!()
+        }
+    }
+}
+
+// non stack variant
 pub struct DFA{
     states: Vec<State>,
     /*
@@ -496,38 +511,21 @@ impl DFA {
             states: Vec::new(),
             map: Vec::new()
         };
-        for regex in regex_set {
-            dfa.impl_regex_at(regex, 0)?;
+
+        // TODO  replace with global Variables
+        for mut regex in regex_set {
+            Self::unfold(&mut regex);
         }
         Ok(dfa)
     }
-    // translate to Grammar -> lr
-    //
-    fn translate(&mut self, regex: Vec<Regexpr>, start: usize, end: Option<usize>) -> Result<(), Error> {
 
-        // get start state
-        let state = match self.states.get_mut(start){
-            Some(state) =>state,
-            None =>{
-                self.states.push(State::default());
-                self.states.get_mut(start).unwrap()
-            }
-        };
-
+    // TODO replace with Global Variables
+    fn unfold(regex: &mut Vec<Regexpr>) {
         for expr in regex {
             match expr {
-                Regexpr::Match(t) => {
-
-                }
-                Regexpr::Any(t) => {
-
-                }
-                Regexpr::Maybe(t) => {
-
-                }
+                RegexPos
             }
         }
-
-        Ok(())
     }
+    fn unfold_term(term:)
 }
