@@ -7,7 +7,7 @@ use crate::lr::Error;
     Group(Vec<char>),
     Pattern(Vec<Regexpr>),
     PatternImpl(usize),
-    Char(char),
+    Char(Vec<char>),
     Or(Vec<Regexpr>, Vec<Regexpr>),
     OrImpl(usize, usize)
 }
@@ -244,7 +244,7 @@ impl<'a> Parser<'a> {
 
 	fn reduction0(mut s: &str) -> char {s.chars().next().unwrap()}
 	fn reduction1(mut s: &str) -> char {s.chars().nth(1).unwrap()}
-	fn reduction2(mut a: char, mut b: char) -> Vec<char> {a..b.collect()}
+	fn reduction2(mut a: char, mut b: char) -> Vec<char> {(a..b).collect()}
 	fn reduction3(mut c: char) -> Vec<char> {vec![c]}
 	fn reduction4(mut s: Vec<char>) -> Vec<char> {s}
 	fn reduction5(mut s: Vec<char>) -> Term {Term::NGroup(s)}
@@ -481,18 +481,38 @@ struct State{
 }
 
 impl Regexpr {
-    fn get(&mut self) -> &mut Term {
+
+    // TODO replace with Global Variables
+    fn transform(&mut self, dfa: &mut DFA) {
         match self {
             Regexpr::Any(t)
             | Regexpr::Match(t)
-            | Regexpr::Maybe(t) => t,
+                | Regexpr::Maybe(t) =>{*t = Self::unfold(dfa, t.clone())},
             _ => panic!()
+        }
+    }
+    fn unfold(dfa: &mut DFA, term: Term) -> Term {
+        match term {
+            Term::Pattern(mut p) => {
+                p.iter_mut().map(|e| e.transform(dfa));
+                dfa.regex_list.push(p.to_vec());
+                Term::PatternImpl(dfa.regex_list.len()-1)
+            },
+            Term::Or(mut p1, mut p2) => {
+                p1.iter_mut().map(|e| e.transform(dfa));
+                p2.iter_mut().map(|e| e.transform(dfa));
+                dfa.regex_list.push(p1.to_vec());
+                dfa.regex_list.push(p2.to_vec());
+                Term::OrImpl(dfa.regex_list.len()-2, dfa.regex_list.len()-1)
+            }
+            t @ _ => t
         }
     }
 }
 
 // non stack variant
 pub struct DFA{
+    regex_list: Vec<Vec<Regexpr>>,
     states: Vec<State>,
     /*
      * 1. Collect all possible tokens as strings => DFA
@@ -509,23 +529,16 @@ impl DFA {
     {
         let mut dfa = DFA{
             states: Vec::new(),
-            map: Vec::new()
+            map: Vec::new(),
+            regex_list: regex_set.into_iter().collect()
         };
 
         // TODO  replace with global Variables
-        for mut regex in regex_set {
-            Self::unfold(&mut regex);
+        for mut regex in dfa.regex_list.clone() {
+            regex.iter_mut().map(|e| e.transform(&mut dfa));
         }
         Ok(dfa)
     }
 
     // TODO replace with Global Variables
-    fn unfold(regex: &mut Vec<Regexpr>) {
-        for expr in regex {
-            match expr {
-                RegexPos
-            }
-        }
-    }
-    fn unfold_term(term:)
 }
