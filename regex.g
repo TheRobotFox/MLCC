@@ -16,7 +16,7 @@ EXPR: TERM=t              {vec![Regexpr::Match(t)                         ]}
 TERM: SYM=s {Term::Char(s)}
     | "[^" SYMS=s "]" {Term::NGroup(s)}
     | "[" SYMS=s "]" {Term::Group(s)}
-    | "(" Pattern=p ")" {p}
+    | "(" Pattern=p ")" {pattern_idx(p)}
     -> Term;
 
 Pattern: Regex=r {Term::Pattern(r)}
@@ -27,7 +27,7 @@ SYMS: SYMS=stack SYM=s {stack.extend(s); stack}
     | SYM=s {s} ->Vec<char>;
 
 SYM: CHR=c {vec![c]}
-   | CHR=a "-" CHR=b {a..b.collect()}
+   | CHR=a "-" CHR=b {a..=b.collect()}
    -> Vec<char>;
 
 CHR: r"[^\[\]\(\)\.\\\+\*\|\?]"=s {s.chars().next().unwrap()}

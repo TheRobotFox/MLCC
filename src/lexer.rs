@@ -1,8 +1,8 @@
 use crate::lr::Error;
 
 //TODO Replace Impl with Global Variables
-#[derive(Debug, Clone)]
-    enum Term{
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum Term{
     NGroup(Vec<char>),
     Group(Vec<char>),
     Pattern(Vec<Regexpr>),
@@ -11,8 +11,8 @@ use crate::lr::Error;
     Or(Vec<Regexpr>, Vec<Regexpr>),
     OrImpl(usize, usize)
 }
-#[derive(Debug, Clone)]
-enum Regexpr{
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum Regexpr{
     Match(Term),
     Maybe(Term),
     Any(Term)
@@ -49,7 +49,7 @@ pub enum Token {
 	L13,
 }
 
-struct Parser<'a> {
+pub struct Parser<'a> {
 	parse_stack: Vec<Types<'a>>,
 	state_stack: Vec<usize>,
 	lexer: logos::Lexer<'a, Token>
@@ -244,7 +244,7 @@ impl<'a> Parser<'a> {
 
 	fn reduction0(mut s: &str) -> char {s.chars().next().unwrap()}
 	fn reduction1(mut s: &str) -> char {s.chars().nth(1).unwrap()}
-	fn reduction2(mut a: char, mut b: char) -> Vec<char> {(a..b).collect()}
+	fn reduction2(mut a: char, mut b: char) -> Vec<char> {(a..=b).collect()}
 	fn reduction3(mut c: char) -> Vec<char> {vec![c]}
 	fn reduction4(mut s: Vec<char>) -> Vec<char> {s}
 	fn reduction5(mut s: Vec<char>) -> Term {Term::NGroup(s)}
@@ -262,7 +262,7 @@ impl<'a> Parser<'a> {
 	fn reduction17(mut stack: Vec<Regexpr>, mut e: Vec<Regexpr>) -> Vec<Regexpr> {stack.extend(e); stack}
 	fn reduction18(mut r: Vec<Regexpr>) -> Vec<Regexpr> {r}
 
-    fn parse(lex: logos::Lexer<'a, Token>) -> Vec<Regexpr> {
+    pub fn parse(lex: logos::Lexer<'a, Token>) -> Vec<Regexpr> {
         let mut parser = Self{
             parse_stack: vec![],
             state_stack: vec![0],
@@ -469,6 +469,37 @@ impl<'a> Parser<'a> {
 
 use std::{collections::{HashMap, BTreeSet, HashSet}, rc::Rc};
 
+
+
+
+// TODO replace with Global Variables
+fn transform(regexes: HashSet<Vec<Regexpr>>) -> HashSet<Vec<Regexpr>> {
+    let mut
+    match self {
+        Regexpr::Any(t)
+        | Regexpr::Match(t)
+            | Regexpr::Maybe(t) =>{*t = Self::unfold(dfa, t.clone())},
+        _ => panic!()
+    }
+}
+fn unfold(dfa: &mut DFA, term: Term) -> Term {
+    match term {
+        Term::Pattern(mut p) => {
+            p.iter_mut().for_each(|e| e.transform(dfa));
+            dfa.regex_list.push(p.to_vec());
+            Term::PatternImpl(dfa.regex_list.len()-1)
+        },
+        Term::Or(mut p1, mut p2) => {
+            p1.iter_mut().for_each(|e| e.transform(dfa));
+            p2.iter_mut().for_each(|e| e.transform(dfa));
+            dfa.regex_list.push(p1.to_vec());
+            dfa.regex_list.push(p2.to_vec());
+            Term::OrImpl(dfa.regex_list.len()-2, dfa.regex_list.len()-1)
+        }
+        t @ _ => t
+    }
+}
+
 struct RegexPos{
     regex: usize,
     index: usize
@@ -478,36 +509,6 @@ struct RegexPos{
 struct State{
     result: usize,
     next: HashMap<Term, usize>
-}
-
-impl Regexpr {
-
-    // TODO replace with Global Variables
-    fn transform(&mut self, dfa: &mut DFA) {
-        match self {
-            Regexpr::Any(t)
-            | Regexpr::Match(t)
-                | Regexpr::Maybe(t) =>{*t = Self::unfold(dfa, t.clone())},
-            _ => panic!()
-        }
-    }
-    fn unfold(dfa: &mut DFA, term: Term) -> Term {
-        match term {
-            Term::Pattern(mut p) => {
-                p.iter_mut().map(|e| e.transform(dfa));
-                dfa.regex_list.push(p.to_vec());
-                Term::PatternImpl(dfa.regex_list.len()-1)
-            },
-            Term::Or(mut p1, mut p2) => {
-                p1.iter_mut().map(|e| e.transform(dfa));
-                p2.iter_mut().map(|e| e.transform(dfa));
-                dfa.regex_list.push(p1.to_vec());
-                dfa.regex_list.push(p2.to_vec());
-                Term::OrImpl(dfa.regex_list.len()-2, dfa.regex_list.len()-1)
-            }
-            t @ _ => t
-        }
-    }
 }
 
 // non stack variant
@@ -535,8 +536,9 @@ impl DFA {
 
         // TODO  replace with global Variables
         for mut regex in dfa.regex_list.clone() {
-            regex.iter_mut().map(|e| e.transform(&mut dfa));
+            regex.iter_mut().for_each(|e| e.transform(&mut dfa));
         }
+        dfa.regex_list.iter().for_each(|regex| println!("{:?}", regex));
         Ok(dfa)
     }
 
