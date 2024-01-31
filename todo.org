@@ -8,6 +8,11 @@ func(function{name, body}){
        LINE("}")
    ];
 }
+** TODO Fix Regex "+" Operator
+
+Current implementation creates duplicates when used in conjunction with Patterns, which could be avoided
+
+[[file:~/projects/MLCC/src/lexer.rs::regex_list:]]
 ** TODO Global Variable
 
 "$IDENT"
