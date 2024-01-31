@@ -1,4 +1,13 @@
 * Inbox
+** TODO Astt
+
+func(function{name, body}){
+   return [
+       LINE(name + "(){"),
+       INDENT(body),
+       LINE("}")
+   ];
+}
 ** TODO Global Variable
 
 "$IDENT"

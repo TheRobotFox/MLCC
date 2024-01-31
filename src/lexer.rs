@@ -11,7 +11,7 @@ pub enum Term{
     Or(Vec<Regexpr>, Vec<Regexpr>),
     OrImpl(usize, usize)
 }
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum Regexpr{
     Match(Term),
     Maybe(Term),
@@ -511,6 +511,67 @@ struct State{
     next: HashMap<Term, usize>
 }
 
+impl Regexpr {
+
+    // TODO replace with Global Variables
+    fn transform(&mut self, dfa: &mut DFA) {
+        match self {
+            Regexpr::Any(t)
+            | Regexpr::Match(t)
+                | Regexpr::Maybe(t) =>{*t = Self::unfold(dfa, t.clone())},
+            _ => panic!()
+        }
+    }
+    fn unfold(dfa: &mut DFA, term: Term) -> Term {
+        match term {
+            Term::Pattern(mut p) => {
+                p.iter_mut().map(|e| e.transform(dfa));
+                dfa.regex_list.push(p.to_vec());
+                Term::PatternImpl(dfa.regex_list.len()-1)
+            },
+            Term::Or(mut p1, mut p2) => {
+                p1.iter_mut().map(|e| e.transform(dfa));
+                p2.iter_mut().map(|e| e.transform(dfa));
+                dfa.regex_list.push(p1.to_vec());
+                dfa.regex_list.push(p2.to_vec());
+                Term::OrImpl(dfa.regex_list.len()-2, dfa.regex_list.len()-1)
+            }
+            t @ _ => t
+        }
+    }
+}
+
+// TODO replace with global var in parser
+// not yet supported
+fn post_process(regexes: Vec<Vec<Regexpr>>) -> Vec<Vec<Regexpr>> {
+    let mut res = regexes.clone();
+    for regex in regexes {
+        for expr in regex {
+            match expr {
+                Regexpr::Any(mut t)
+                | Regexpr::Match(mut t)
+                | Regexpr::Maybe(mut t) =>{
+                    match t.clone() {
+                        Term::Pattern(p) => {
+                            t=Term::PatternImpl(res.len());
+                            res.push(p);
+                        }
+                        Term::Or(p1,p2) =>{
+                            let a=res.len();
+                            res.push(p1);
+                            t=Term::OrImpl(a, res.len());
+                            res.push(p2);
+                        }
+                        _ =>{}
+                    }
+                },
+                _ => panic!()
+            }
+        }
+    }
+    res
+}
+
 // non stack variant
 pub struct DFA{
     regex_list: Vec<Vec<Regexpr>>,
@@ -526,7 +587,7 @@ impl DFA {
     // collect all tokens and create DFA
     // obtain possible outputs from results list
     // for r in map if token in r -> insert
-    pub fn new(regex_set: HashSet<Vec<Regexpr>>) -> Result<DFA, Error>
+    pub fn new(regexes: Vec<Vec<Regexpr>>) -> Result<DFA, Error>
     {
         let mut dfa = DFA{
             states: Vec::new(),
@@ -542,5 +603,4 @@ impl DFA {
         Ok(dfa)
     }
 
-    // TODO replace with Global Variables
 }
