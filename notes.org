@@ -1,4 +1,8 @@
 * Inbox
+** [2024-02-05 Mo 19:51] DFA State self Propergation
+
+Unordered State List
+Apply Regexes sequencially
 ** [2024-01-07 So 13:31] Define Weak Tokens
 
 Weak tokens are ignored if they'd cause an error, but can still be consumed by if needed

@@ -561,7 +561,7 @@ impl DFA {
 
     fn append_next(map: &mut HashMap<Term, BTreeSet<RegexPos>>, term: Term, next: BTreeSet<RegexPos>) {
         match term {
-            Term::Char(cs) => {
+            Term::Char(c) => {
 
             }
         }
