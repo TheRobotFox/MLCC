@@ -3,27 +3,27 @@
 start: Regex=r "!" {r}
      -> Vec<Regexpr>;
 
-Regex: Regex=stack EXPR=e {stack.extend(e); stack}
-    | EXPR=e {e}
+Regex: Regex=stack EXPR=e {stack.push(e); stack}
+    | EXPR=e {vec![e]}
     -> Vec<Regexpr>;
 
-EXPR: TERM=t              {vec![Regexpr::Match(t)                         ]}
-    | TERM=t "*"          {vec![Regexpr::Any(t)                           ]}
-    | TERM=t "?"          {vec![Regexpr::Maybe(t)                         ]}
-    | TERM=t "+"          {vec![Regexpr::Match(t.clone()), Regexpr::Any(t)]}
-    -> Vec<Regexpr>;
+EXPR: TERM=t              {Regexpr::Match(t)       }
+    | TERM=t "*"          {Regexpr::Any(t)         }
+    | TERM=t "?"          {Regexpr::Maybe(t)       }
+    | TERM=t "+"          {Regexpr::More(t.clone())}
+    -> Regexpr;
 
-TERM: SYM=s {Term::Char(s)}
+TERM: CHR=s {Term::Char(s)}
     | "[^" SYMS=s "]" {Term::NGroup(s)}
     | "[" SYMS=s "]" {Term::Group(s)}
-    | "(" Pattern=p ")" {pattern_idx(p)}
+    | "(" Pattern=p ")" {p}
     -> Term;
 
 Pattern: Regex=r {Term::Pattern(r)}
     |    Regex=a "|" Regex=b {Term::Or(a,b)}
     -> Term;
 
-SYMS: SYMS=stack SYM=s {stack.extend(s); stack}
+SYMS: SYMS=stack SYM=s {stack.push(s); stack}
     | SYM=s {s} ->Vec<char>;
 
 SYM: CHR=c {vec![c]}

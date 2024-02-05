@@ -1,4 +1,12 @@
 * Inbox
+** TODO NDA Merger
+
+- Backtracking nicht möglich
+- lookahead Term?
+  if next is optional -> skip
+  current is match or any
+
+[[file:~/projects/MLCC/src/lexer.rs::match term {]]
 ** TODO Astt
 
 func(function{name, body}){
