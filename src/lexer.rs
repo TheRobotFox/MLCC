@@ -603,3 +603,41 @@ impl DFA {
     }
 
 }
+
+/*
+ * State: HashMap<Term, State>
+ * stack self until opaque nöööö
+ */
+
+pub struct NDAState {
+    fin: Option<usize>,
+    next: HashMap<Term, NDAState>
+}
+
+impl NDAState {
+    fn next(self,)
+}
+struct NDA {
+   start: Vec<NDAState>
+}
+impl NDA
+{
+    pub fn new(regexes: HashSet<Vec<Regexpr>>) -> Result<NDA, Error>
+    {
+        let mut nda = NDA{
+            start: Vec::new()
+        };
+
+        for regex in regexes {
+            self.insert(regex)?;
+        }
+
+
+        Ok(nda)
+    }
+
+    fn insert(regex: Vec<Regexpr>) -> Result<(), Error> {
+        for
+        Ok(())
+    }
+}
