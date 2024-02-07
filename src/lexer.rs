@@ -609,13 +609,17 @@ impl DFA {
  * stack self until opaque nöööö
  */
 
+type NDANext = Rc<HashSet<NDAState>>;
 pub struct NDAState {
     fin: Option<usize>,
-    next: HashMap<Term, NDAState>
-}
+    next: HashMap<Term, NDANext>}
 
 impl NDAState {
-    fn next(self,)
+    fn next(&mut self, mut regex: impl Iterator<Item=Regexpr>, stack: Vec<NDANext>) {
+        match regex.next() {
+
+        }
+    }
 }
 struct NDA {
    start: Vec<NDAState>
@@ -641,3 +645,7 @@ impl NDA
         Ok(())
     }
 }
+
+/*
+ *
+ */
