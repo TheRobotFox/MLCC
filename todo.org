@@ -1,4 +1,14 @@
 * Inbox
+** TODO Lexer Maschine DFA Construction
+Awlays push DFA State forward
+
+[[file:~/projects/MLCC/src/lexer.rs::next: HashMap<Term, NDANext>]]
+** TODO Regex Reverse NDA
+
+The Regex Maschine can be condensed if constructed from the back by tracing identical Paths
+This would require backrefs to the previous State eg. doubley linked list
+
+[[file:~/projects/MLCC/src/lexer.rs]]
 ** TODO NDA Merger
 
 - Backtracking nicht möglich
