@@ -609,18 +609,23 @@ impl DFA {
  * stack self until opaque nöööö
  */
 
-type NDANext = Rc<HashSet<NDAState>>;
-pub struct NDAState {
-    fin: Option<usize>,
-    next: HashMap<Term, NDANext>}
-
-impl NDAState {
-    fn next(&mut self, mut regex: impl Iterator<Item=Regexpr>, stack: Vec<NDANext>) {
-        match regex.next() {
-
+impl Regexpr {
+    fn opaque(&self) -> bool {
+        match self {
+            Regexpr::Match(_)=>true,
+            Regexpr::More(_)=>true,
+            Regexpr::Any(_) =>false,
+            Regexpr::Maybe(_)=>false
         }
     }
 }
+
+
+pub struct NDAState {
+    fin: Option<usize>,
+    next: HashSet<NDAState>
+}
+
 struct NDA {
    start: Vec<NDAState>
 }
@@ -639,9 +644,25 @@ impl NDA
 
         Ok(nda)
     }
+    fn insert_regex(&mut self, mut current: usize, regex: Vec<Regexpr>, mut stack: Vec<usize>) -> Result<(), Error> {
+        for expr in regex {
 
-    fn insert(regex: Vec<Regexpr>) -> Result<(), Error> {
-        for
+            // add self to all stack items
+            for next in stack {
+                next.mu
+            }
+
+            // add stack?
+            if !expr.opaque() {
+                stack.push(current);
+            }
+
+            match expr {
+                Regexpr::Any(t) => {
+
+                }
+            }
+        }
         Ok(())
     }
 }
