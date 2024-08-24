@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::rc::Rc;
 use std::collections::hash_map::Entry;
 
@@ -13,6 +12,12 @@ type IdxToken = usize;
 type IdxReduction = usize;
 type IdxComponent = usize;
 
+
+#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct Path{
+    pub position: Position,
+    pub import: BTreeSet<Token>
+}
 
 type StateImpl = BTreeSet<Path>;
 

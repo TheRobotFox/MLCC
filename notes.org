@@ -1,4 +1,237 @@
 * Inbox
+** [2024-08-07 Wed 13:41] Overview
+*** Parser Gen
+1. Parse Grammar.g file
+2. Post process grammar AST
+   1. Collect regex
+   2. Generate Single Lexer Maschine
+   3. Get Tokens from Lexer (many Regex -> 1 Token)
+   4. Replace Regex with new Lexer Tokens
+      -> theoretically increases Ambiguity (should not matter)
+3. Generate NDA by Position/Parrent-Set collapse (woow)
+4. Convert NDA to state map
+5. Hand off Lexer and Statemap (opt Generated Types and Code) to ASTT
+6. Run ASTT Script -> Transform Parsed input -> Generate Code
+*** KILL General TranspilerGenerator
+Create AST from ASTT Script
+**** ASTT Script
+The only type is a tree, can be specilized into defined types, which describe trees via patterns
+
+***** Idea
+- Define Operations on Patterns of data
+- Define Variables by parsing input into patterns
+- chain operations to yeld results
+- Maybe add language api for calling functions -> output generated code for language instead
+- Treat comptime when possible
+***** Concepts
+- Low level function Objcets ::
+    #+begin_src C
+
+    // function
+    name: pattern exp
+        | pattern2 exp2;
+
+    // create object from function
+    obj= (...)->name; // obj holds unevaluated function
+
+    // consume obj
+    print: ...
+    obj->print;
+    #+end_src
+
+- Deduce from Grammar ::
+  - types = parsers for input
+
+  - function args use patterns as well
+    #+begin_src C
+
+    vector(T): vector(T) T | T; // define type patterns
+    reduce(T, func): vector(T)=stack T=e {(stack->reduce(T, func), e)->func}->auto // define generic operations on
+                            //patterns (auto -> deduce return type deduce from outside)
+                   | T=e {e} -> T;
+
+    // visual of possible int function implementation
+    int: [builtin_number]->int
+     | [builtin_float]->truncate->int;
+
+    num: int|float; // operations (=functions) need to be defined on both types
+              // eg. +,*,/,- defined for all arithmetic types ?
+              // stored as tagged union comptime if possible
+              // maybe introduces new rule to int function (= int: <int> int ->)
+              //                                                    ^tag
+
+    add1: int=a int=b {a+b}->int                // presecende from top to bottom
+        | num=a num=b {a+b}->float            // try to match patterns in input
+        | vector(int) {$->reduce(num, add1)  /* reduce returns int ==>*/}->int
+        | vector(num) {$->reduce(num, add1)/* reduce returns int ==>*/}->float;
+
+    _add2: num=a num=b {a+b}->num                   // returns tagged union with the approproate type set
+         | vector(num)->reduce(num, add, num)->num; // shorthand for single instructions
+
+    expand: int|float; // same as num ==> function which takes ether int or float and returns them as is
+
+    add2: vector(num)->_add2->expand;               // return type is dependent on expand
+
+    pack(T): auto->T;
+    foreach(F): (auto=e ...=r) {}
+
+    input1: (1.5 2 2)->vector(num) // tuple gets input into vector(T) generic function
+    input2: (4 2 2)->vector(int)   //
+
+    input1->add2->print                          // (num[float])(5.5)
+    input2->add1->print                          // (num[int])(10)
+
+    #+end_src
+
+  - Types and Functions ::
+    #+begin_src C
+// define parser
+vector(T):= vector(T) T | T; // type pattern
+num
+
+    #+end_src
+
+
+**** Included Modules
+- =ParserGenerator(grammar.file) -> {ParserData...} ::
+  Generates ParserData using previously defined Steps (which will be self Hosted)
+  This can be turned into a function using code gen->eval->CodeAPI
+- =LexerGenerator(Regexes{})->{LexerData...} ::
+  Generates Lexer Maschine from Regexes and returns info
+- LexerToken(LexerObject, Regex)->Token
+  - Eval(ASTT-Script)->Output
+*** Transitional Language (Trage)
+- Script -> converted to any language
+- Conversion defined within Trage
+**** Script
+selfhosted interpreter in rust or so for bootstrap
+- Define Tree-Patterns (=Datatypes)
+- optionally add translation rules into the definintions (follows .g file)
+#+begin_src json
+{1: 'c', 2: "string", 3: 1337, 4: 3.14159, 5:
+ {1: "IDK", 2: null}
+}
+#+end_src
+#+begin_src antlr
+@export[name=Json] // Function is exported to be used as parser
+json := '{' items=items  '}'; // only items (=named) is stored as field
+items := items=stack item=item | item=item;
+
+item := @int=id ':' val(json)=val;
+val(T) := @int=i      //predefined FUnction for int type and parse
+       | @float=f
+       | @string=str
+       | T=child
+       | "null"=null;
+
+xml := "<xml>\n" tag[]=tags "</xml>";
+tags := tags=stack tag=tag | tag=tag;
+tag := ('<' @string=name '>') val(tags)=val ("</" @string=name ">"); // same name -> same field
+                                                                    // () =groupings for structerd access
+
+j2x: (items=its) {(tags: its->i2t)}->xml; // concrete type is relevant for function return
+                                          // output is cast to return type
+
+i2t: (items=stack item=e) { ((e)->i2t, /*TODO how to foreach a list*/ }->tags // input will be deduced by compiler
+   | (item=e) { (name: e.id, val: e.val->vj2vx) }->tag
+
+vj2vx: ((items=its)) { its->i2t }->xml // priority by order
+     | val(json) {}->val(tags);   // catch all other vals
+
+// advanced pattern matching
+i2t: (items=stack item=e)    { (e)->i2t }->tag // input will be deduced by compiler
+   | ((@int=id (json=j)))    { (name: id, val: j->j2x) }->tag
+   | ((@int=id val(json)=e)) { (name: id, val: e) }->tag; // check for valid operation using above constarints
+
+func: obj {...}->@int
+//^name ^args ^code ^return type
+    | (@int=a @int=b) {a+b}->@int;
+//  ^alternative    ^obj unwrap
+
+x2s: (@string=f tags=tgs @string=b) { f + '\n' + ((tags, 1)->x2s) + b }->@string
+   | (tags=stack tag=t | tag=t) @int=ind {f"{\t*ind}{t->x2s}\n"}->@string
+   | (xml=x) {f"{tag[0]} {x->x2s} {tag[2]}"}->@string
+   | tag=t {f"{tag[0]} {tag[1]->string} {tag[2]}"}->@string // ->string is predefined toString function
+x2s->export; // generate
+#+end_src
+- Creates a parser for JSON input
+- Generates data types after translationScript
+  #+begin_src C
+struct json;
+struct item;
+struct json {
+    struct item items[];
+    int items_count;
+};
+struct val {
+    union {
+        int i; float f; char *str; struct json json;
+    };
+    enum {
+        i,f,str,json,null
+    } val;
+};
+struct item {
+        int id;
+        struct val val;
+};
+struct json parse_json(char *str, ......){...}
+  #+end_src
+*** V2
+**** Requirements
+- Functional language
+- pattern matching parameters
+- Reflektion? -> integrated parser for won grammar
+- Ergonomic String manipulation or Code export (1-->2)
+- Objects as namespaces -> structs -> function definitions are values
+**** Test
+#+begin_src antlr
+// : declare, = bind
+// [] type, () literal
+json: [@char @type @char] = ['{' items=content  '}']; // data structure access via tuple or name
+items: [@type @type]|[@type]] = [items=stack item= | item=]; // type ether [items id ':' val] or [id ':' val]
+
+val: [@type->@type]
+    = @type=T -> [@int=i
+                 |@float=f
+                 |@string=str
+                 |T=child
+                 | "null"=null]
+    -> @type; // comptime? function generates tuple
+              // [A|[B|[C|...]]] --> [A|B|C|...] und so
+
+item: [@type @char @type] = [@int=id ':' (json->val)=val ];
+
+xml := "<xml>\n" tag[]=tags "</xml>";
+tags := tags=stack tag=tag | tag=tag;
+tag := ('<' @string=name '>') val(tags)=val ("</" @string=name ">"); // same name -> same field
+                                                                    // () =groupings for structerd access
+
+j2x: (items=its) {(tags: its->i2t)}->xml; // concrete type is relevant for function return
+                                          // output is cast to return type
+
+i2t: (items=stack item=e) { ((e)->i2t, /*TODO how to foreach a list*/ }->tags // input will be deduced by compiler
+   | (item=e) { (name: e.id, val: e.val->vj2vx) }->tag
+
+vj2vx: ((items=its)) { its->i2t }->xml // priority by order
+     | val(json) {}->val(tags);   // catch all other vals
+
+// advanced pattern matching
+i2t: (items=stack item=e)    { (e)->i2t }->tag // input will be deduced by compiler
+   | ((@int=id (json=j)))    { (name: id, val: j->j2x) }->tag
+   | ((@int=id val(json)=e)) { (name: id, val: e) }->tag; // check for valid operation using above constarints
+
+func: obj {...}->@int
+//^name ^args ^code ^return type
+    | (@int=a @int=b) {a+b}->@int;
+//  ^alternative    ^obj unwrap
+
+x2s: (@string=f tags=tgs @string=b) { f + '\n' + ((tags, 1)->x2s) + b }->@string
+   | (tags=stack tag=t | tag=t) @int=ind {f"{\t*ind}{t->x2s}\n"}->@string
+   | (xml=x) {f"{tag[0]} {x->x2s} {tag[2]}"}->@string
+   | tag=t {f"{tag[0]} {tag[1]->string} {tag[2]}"}->@string // ->string is predefined toString function
+x2s->export; // generate
+#+end_src
 ** [2024-02-05 Mo 19:51] DFA State self Propergation
 
 Unordered State List

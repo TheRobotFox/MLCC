@@ -1,4 +1,7 @@
 * Inbox
+** KILL Modes Favour stack resolution vs more (hint) states
+- pretty much ignore imported tokens, when building NDA and instead implement best fit search
+  -> smaller grammar set supported
 ** TODO Lexer Maschine DFA Construction
 Awlays push DFA State forward
 

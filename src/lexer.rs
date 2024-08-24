@@ -51,7 +51,7 @@ pub enum Token {
 	L13,
 }
 
-struct Parser<'a> {
+pub struct Parser<'a> {
 	parse_stack: Vec<Types<'a>>,
 	state_stack: Vec<usize>,
 	lexer: logos::Lexer<'a, Token>
@@ -234,7 +234,7 @@ impl<'a> Parser<'a> {
 	fn reduction17(mut a: Vec<Regexpr>, mut b: Vec<Regexpr>) -> Term {Term::Or(a,b)}
 	fn reduction18(mut r: Vec<Regexpr>) -> Vec<Regexpr> {r}
 
-    fn parse(lex: logos::Lexer<'a, Token>) -> Vec<Regexpr> {
+    pub fn parse(lex: logos::Lexer<'a, Token>) -> Vec<Regexpr> {
         let mut parser = Self{
             parse_stack: vec![],
             state_stack: vec![0],
@@ -441,18 +441,18 @@ impl<'a> Parser<'a> {
 }
 
 
-use std::fs::read_to_string;
-fn main() {
-    let source = match read_to_string("gramma.g") {
-        Ok(s) => s,
-        Err(e) => {
-            panic!("cannot read file!")
-        }
-    };
-    // println!("Input: {:?}", &string);
-    let lex = Token::lexer(&source);
-    println!("Result: {:?}", Parser::parse(lex));
-}
+// use std::fs::read_to_string;
+// fn main() {
+//     let source = match read_to_string("gramma.g") {
+//         Ok(s) => s,
+//         Err(e) => {
+//             panic!("cannot read file!")
+//         }
+//     };
+//     // println!("Input: {:?}", &string);
+//     let lex = Token::lexer(&source);
+//     println!("Result: {:?}", Parser::parse(lex));
+// }
 
 use std::{collections::{HashMap, HashSet, BTreeSet}, rc::Rc};
 

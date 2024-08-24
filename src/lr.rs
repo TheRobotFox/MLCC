@@ -190,11 +190,6 @@ enum Event {
     Rule(Rc<str>),
     Reduce
 }
-#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct Path{
-    pub position: Position,
-    pub import: BTreeSet<Token>
-}
 
 #[derive(Clone, Default)]
 pub struct State {
