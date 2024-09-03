@@ -199,23 +199,29 @@ val: [@type->@type]
                  | "null"=null]
     -> @type; // comptime? function generates tuple
               // [A|[B|[C|...]]] --> [A|B|C|...] und so
+    // functions need a returntype -> Type is generic obecjt with purpose
 
-item: [@type @char @type] = [@int=id ':' (json->val)=val ];
+item: [@type @char @type] = [@int=id ':' (json->val)=val ]; // meta function generate type
 
-xml := "<xml>\n" tag[]=tags "</xml>";
-tags := tags=stack tag=tag | tag=tag;
-tag := ('<' @string=name '>') val(tags)=val ("</" @string=name ">"); // same name -> same field
-                                                                    // () =groupings for structerd access
+xml := ["<xml>\n" tags=tags "</xml>"];
+tags := [tags=stack tag=tag | tag=tag];
+tag := [['<' @string=name '>'] val(tags)=val ["</" @string=name ">"]]; // same name -> same field
+                                                                    // nested struct
 
-j2x: (items=its) {(tags: its->i2t)}->xml; // concrete type is relevant for function return
+    /* ASTS transpiled to Any language
+      ,* FUnction = ... -> ... -> ...; // cross platform, only build in functionallity
+      ,* Function = ... -> {...} -> ...; // custom function language features (prob wrapped in function executor helper)
+      ,*/
+j2x := (items=its) -> (tags: its->i2t) ->xml; // matches obj containing items and binding items to "its"; concrete type is relevant for function return
                                           // output is cast to return type
 
-i2t: (items=stack item=e) { ((e)->i2t, /*TODO how to foreach a list*/ }->tags // input will be deduced by compiler
-   | (item=e) { (name: e.id, val: e.val->vj2vx) }->tag
+i2t := (items=stack item=e)  -> (stack->i2t, e->i2t)  -> tags // input will be deduced by compiler
+   | (item=e) -> (name: e.id, val: e.val->vj2vx) ->tag;
 
-vj2vx: ((items=its)) { its->i2t }->xml // priority by order
-     | val(json) {}->val(tags);   // catch all other vals
+vj2vx := ((items=its):[json]) -> its->i2t ->xml // priority by order
+          | [json->val]=tags ->val(tags);   // catch all other vals; TODO proper Syntax for generated type match
 
+ := a b c ->
 // advanced pattern matching
 i2t: (items=stack item=e)    { (e)->i2t }->tag // input will be deduced by compiler
    | ((@int=id (json=j)))    { (name: id, val: j->j2x) }->tag
