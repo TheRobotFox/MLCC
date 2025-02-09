@@ -1,7 +1,7 @@
 use crate::{lr, automaton::{self, Action}, };
 use std::collections::HashMap;
 
-pub fn export(automaton: &automaton::Automaton) -> String {
+pub fn export_rust(automaton: &automaton::Automaton) -> String {
 //     let mut content = String::from(r#"
 // use std::rc::Rc;
 // #[derive(Debug)]
@@ -65,26 +65,48 @@ pub fn export(automaton: &automaton::Automaton) -> String {
 //     pub rules: Vec<Rule>,
 // }
 // "#);
+
+ //    let mut content = String::from(r#"
+// #[derive(Debug, Clone)]
+//     enum Term{
+//     NGroup(Vec<char>),
+//     Group(Vec<char>),
+//     Pattern(Vec<Regexpr>),
+//     Char(char),
+//     Or(Vec<Regexpr>, Vec<Regexpr>)
+// }
+// #[derive(Debug, Clone)]
+// enum Regexpr{
+//     Match(Term),
+//     Maybe(Term),
+//     Any(Term)
+// }
+// "#);
+
     let mut content = String::from(r#"
 #[derive(Debug, Clone)]
-    enum Term{
-    NGroup(Vec<char>),
-    Group(Vec<char>),
-    Pattern(Vec<Regexpr>),
-    Char(char),
-    Or(Vec<Regexpr>, Vec<Regexpr>)
+enum Term{
+    Function(String, Vec<Term>),
+    Constant(String)
 }
 #[derive(Debug, Clone)]
-enum Regexpr{
-    Match(Term),
-    Maybe(Term),
-    Any(Term)
+enum Formula{
+    IF(Box<Formula>, Box<Formula>),
+    IFF(Box<Formula>, Box<Formula>),
+    AND(Box<Formula>, Box<Formula>),
+    OR(Box<Formula>, Box<Formula>),
+    Not(Box<Formula>),
+    Rel(String, Vec<Term>),
+    Eq(Term, Term),
+    Forall(Box<Formula>, String),
+    Exists(Box<Formula>, String),
 }
 "#);
 
     //generate Regex
     content += "use logos::Logos;\n";
     content += "#[derive(Logos, Debug, PartialEq, PartialOrd)]\n";
+    content += r#"#[logos(skip " ")]"#;
     content += "pub enum Token {\n";
     for (i,t) in automaton.terminals.iter().enumerate() {
         match t {
@@ -115,7 +137,8 @@ enum Regexpr{
 	($self:ident, $t:ident) => {
 		match $self.parse_stack.pop().unwrap() {
 			Types::$t(t) =>t,
-			_ => unreachable!()
+			o@_ => {println!("Expected: {:?} got {:?}", stringify!($t), o);
+            unreachable!()}
 		}
 	}
 }"#;
@@ -264,19 +287,17 @@ enum Regexpr{
                     continue;
                 }}
             }}
-            let mut i = parser.state_stack.len();
-            while i>0 {{
-                i-=1;
-                let prev = *parser.state_stack.get(i).unwrap();
+            while parser.state_stack.len()>0 {{
+                let prev = *parser.state_stack.last().unwrap();
                 let next = Self::GOTO[prev][-(task+1) as usize];
                 if next!=0 {{
                     parser.state_stack.push(next);
                     break
                 }}
+                parser.state_stack.pop();
             }}
-            if i<0{{break}}
         }}
-        if parser.state_stack.len() != 1 {{
+        if parser.state_stack.len() != 0 {{
             panic!("Parsing failed! {{:?}} {{:?}}", parser.parse_stack, parser.state_stack);
         }} else {{
             match parser.parse_stack.into_iter().nth(0).unwrap() {{
@@ -309,7 +330,7 @@ enum Regexpr{
 use std::fs::read_to_string;
 fn main() {
     let source = match read_to_string("gramma.g") {
-        Ok(s) => s,
+        Ok(s) => "\\ex x=x",
         Err(e) => {
             panic!("cannot read file!")
         }
@@ -318,6 +339,247 @@ fn main() {
     let lex = Token::lexer(&source);
     println!("Result: {:?}", Parser::parse(lex));
 }"#;
+
+    content
+}
+
+pub fn export_cpp(automaton: &automaton::Automaton) -> String {
+
+    let mut content = String::from(r#"#include "FO.hpp"
+#include <string>
+#include <cstring>
+#include <vector>
+#include <iostream>
+#include <iterator>
+#include <variant>
+using std::string_view;
+struct Token {
+    enum Kind {
+"#);
+
+    let mut to_strs = "const char* to_str[] = {\n".to_owned();
+    let mut lexing = r#"
+auto read_token(std::vector<Token> &v, std::string_view str) -> int
+{
+    if(str[0]==' ') return 1;
+"#.to_owned();
+
+    //generate Regex
+    for (i,t) in automaton.terminals.iter().enumerate() {
+        let mut name;
+        match t {
+            lr::Token::Regex(r) => {
+                let mut string = r.to_string();
+                string.remove(0);
+                content+= format!("\t\t//Regex: {}\n", string).as_str();
+                name = format!("Regex({})", r).replace("\"", "\\\"");
+            }
+            lr::Token::Terminal(t) => {
+                content+= format!("\t\t//Token: {}\n", t).as_str();
+                let fixed = t.replace("\\", "\\\\");
+                lexing += format!("\tif(str.starts_with({})){{v.emplace_back(Token::Tok{});return strlen({});}}\n", fixed,i,fixed).as_str();
+                name = format!("Token({})", t).replace("\"", "\\\"");
+
+            }
+            lr::Token::EOF => {
+                content+= format!("\t\t//EOF\n").as_str();
+                name = "EOF".to_owned();
+            }
+        }
+        content+= format!("\t\tTok{}={},\n", i,i).as_str();
+        to_strs += format!("\t[Token::Tok{}] = \"{}\",\n", i, name).as_str();
+    }
+    content += "\t} kind;\n\tstd::string_view data;\n};\n";
+
+    lexing += r#"
+    const auto *iter = str.begin();
+    while((isalnum(*iter) != 0) || *iter=='_') iter++;
+    v.emplace_back(Token::Tok?, std::string_view(str.begin(),iter));
+    return iter-str.begin();
+}
+auto lex(std::string_view inp) -> std::vector<Token>
+{
+    std::vector<Token> v;
+
+    while(inp.length()){
+        int res = read_token(v, inp);
+        if(res<1){
+            std::cout << "Error while Lexing: " << inp << "\n";
+            return {};
+        }
+        inp = inp.substr(res);
+    }
+    v.emplace_back(Token::Tok0);
+    return v;
+}
+"#;
+
+    content+=lexing.as_str();
+    content+=(to_strs+"\n};").as_str();
+
+    content += r#"
+template<class S>
+class Parser
+{
+"#;
+
+
+    // reductions
+    let mut types = HashMap::new();
+    let mut index = 0;
+    let mut get_type = |t| {
+        match types.entry(t) {
+            std::collections::hash_map::Entry::Occupied(i)=> *i.get(),
+            std::collections::hash_map::Entry::Vacant(i) =>{i.insert({index+=1; index}); index}
+        }
+    };
+
+    let _ = get_type("std::string_view".into());
+
+    let mut reductions = String::new();
+    for (i, r) in automaton.reductions.iter().enumerate() {
+        if let Some(task) = &r.task {
+            let ret = get_type(task.return_type.clone());
+            content += format!("\tauto reduction{}(", i).as_str();
+
+            let mut args = String::new();
+            reductions+=format!("\t\t\tcase {}:{{\n", - (i as isize) -1).as_str();
+
+            for (i, a) in task.args.iter().enumerate() {
+                if let Some(arg) = a {
+                    content += format!("{} {}, ", arg.arg_type, arg.identifier).as_str();
+
+                    args += format!("std::move(a{}), ", i).as_str();
+                }
+            }
+            content.pop();
+            content.pop();
+
+            args.pop();
+            args.pop();
+            content+= format!(") -> {} {} \n", &task.return_type, &task.code).as_str();
+
+            for (i, a) in task.args.iter().enumerate().rev() {
+                if let Some(arg) = a {
+                    reductions += format!("\t\t\t\tauto a{} = std::get<{}>(data_stack.back()); data_stack.pop_back();\n ", i, arg.arg_type).as_str();
+                } else {
+                    reductions += "\t\t\t\tdata_stack.pop_back();\n";
+                }
+                reductions += "\t\t\t\tstate_stack.pop_back();\n";
+            }
+
+            reductions+=format!("\t\t\t\tdata_stack.emplace_back(reduction{}({}));\n\t\t\t}}\n\t\t\t\tbreak;\n",
+                                i, args).as_str();
+        }else {
+            reductions+= &format!("\t\t\tcase {}: break;\n", -(i as isize) -1);
+        }
+    }
+
+    let export_type =automaton.export.clone().unwrap_or("".into());
+
+    // content += "\tstruct Type\n\t{\n\t\t";
+    // let mut en: String = "enum {".to_owned();
+    // let mut un = "union {".to_owned();
+    // for (t, i) in types.iter() {
+    //     en += format!("T{},",i).as_str();
+    //     un += format!("{} t{};", t, i).as_str();
+    // }
+    // en.pop();
+    // content+= (en + "} kind;\n\t\t").as_str();
+    // content+= (un + "};\n").as_str();
+    // content+= "};\n\n";
+    content += "\tusing Type = std::variant<";
+    for (t, i) in types.iter() {
+        content += format!("{},", t).as_str();
+    }
+    content.pop();
+    content+= ">;\n";
+
+    content+= "\tstd::vector<Type> data_stack;\n";
+    content+= "\tstd::vector<long> state_stack;\n";
+
+    let terminals_len = automaton.terminals.len();
+    let reductions_len = automaton.reductions.len();
+
+    let mut actions = format!("\tconst long actions[{}][{}]= {{\n", automaton.states.len(), terminals_len);
+    let mut gotos = format!("\tconst long gotos[{}][{}] = {{\n", automaton.states.len(), reductions_len);
+
+    for state in automaton.states.iter() {
+        let mut array = vec![0; terminals_len];
+        for (i,a) in state.lookahead.iter() {
+            array[*i] = match a {
+                Action::Halt => 0,
+                Action::Reduce(i) => - (*i as isize) -1,
+                Action::Shift(i) => *i as isize +1
+            }
+        }
+        actions += format!("\t\t{:?}, \n", array).as_str().replace("[", "{").as_str().replace("]", "}").as_str();
+
+        let mut array = vec![0; reductions_len];
+
+        for (r,s) in state.goto.iter() {
+            array[*r] = *s;
+        }
+        gotos += format!("\t\t{:?}, \n", array).as_str().replace("[", "{").as_str().replace("]", "}").as_str();
+    }
+
+    actions+= "\t};\n\n";
+    gotos+= "\t};\n\n";
+
+    content += actions.as_str();
+    content += gotos.as_str();
+
+
+    content += format!(r#"
+public:
+    template<std::ranges::range R>
+    auto parse(R tokens) -> {}
+    {{
+        auto start = tokens.begin();
+        auto end = tokens.end();
+        if(start==end) return {{}};
+
+        state_stack = {{0}};
+        data_stack.clear();
+
+        auto token = *start++;
+
+        while(!state_stack.empty()) {{
+            long state = state_stack.back();
+            long task = actions[state][token.kind];
+            switch(task){{
+            case 0: goto stop;
+{}
+                default: {{
+                    state_stack.push_back(task-1);
+                    data_stack.emplace_back(token.data);
+                    if(start==end) token = {{Token::Tok0}};
+                    token = *start++;
+                    continue;
+                }}
+            }}
+            while(!state_stack.empty()){{
+                long prev = state_stack.back();
+                long next = gotos[prev][-(task+1)];
+                if(next!=0){{
+                    state_stack.push_back(next);
+                    break;
+                }}
+                state_stack.pop_back();
+            }}
+        }}
+stop:
+        if(!state_stack.empty()){{
+            std::cout << "Failed to Parse\n";
+        }} else {{
+            return std::move(std::get<{}>(data_stack.back()));
+        }}
+        return {{}};
+    }}
+"#, export_type, reductions, export_type).as_str();
+
+    content += "};\n\n";
+    // types
 
     content
 }

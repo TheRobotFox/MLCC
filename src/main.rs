@@ -9,7 +9,7 @@ mod parser;
 mod lr;
 mod automaton;
 mod reverseparse;
-mod lexer;
+// mod lexer;
 
 fn info(lr: &lr::LR, ast: &parser::GAst) {
     // print table
@@ -77,67 +77,68 @@ fn info(lr: &lr::LR, ast: &parser::GAst) {
     }
 }
 fn main() {
-    lexer::DFA::new(HashSet::from(["([abc])+!","[0-9]*abc!"].map(|s|{
+    // lexer::DFA::new(HashSet::from(["([abc])+!","[0-9]*abc!"].map(|s|{
 
-        let lex = lexer::Token::lexer(&s);
-        lexer::Parser::parse(lex)
-    })));
-    // let source = match read_to_string("regex.g") {
-    //     Ok(s) => s,
-    //     Err(e) => {
-    //         panic!("cannot read file!")
-    //     }
-    // };
-    // let lex = parser::gTokens::lexer(source.as_str());
-    // let ast = match parser::parse(lex) {
-    //     Ok(ast) => ast,
-    //     Err(err) => panic!("Error while Parsing: {:?}", err),
-    // };
-    // println!("Output: {:?}", ast);
+    //     let lex = lexer::Token::lexer(&s);
+    //     lexer::Parser::parse(lex)
+    // })));
+    let source = match read_to_string("fo.g") {
+        Ok(s) => s,
+        Err(e) => {
+            panic!("cannot read file!")
+        }
+    };
+    let lex = parser::gTokens::lexer(source.as_str());
+    let ast = match parser::parse(lex) {
+        Ok(ast) => ast,
+        Err(err) => panic!("Error while Parsing: {:?}", err),
+    };
+    println!("Output: {:?}", ast);
 
-    // let lr = match lr::LR::new(&ast.rules) {
-    //     Ok(lr)=>lr,
-    //     Err(errors) => {
-    //         println!("Error occured!");
-    //         println!("{:?}", errors);
-    //         return;
-    //     }
-    // };
+    let lr = match lr::LR::new(&ast.rules) {
+        Ok(lr)=>lr,
+        Err(errors) => {
+            println!("Error occured!");
+            println!("{:?}", errors);
+            return;
+        }
+    };
 
-    // info(&lr, &ast);
+    info(&lr, &ast);
 
-    // let automaton = match automaton::Automaton::new(&lr) {
-    //     Ok(lr)=>lr,
-    //     Err(errors) => {
-    //         println!("Error occured!");
-    //         println!("{:?}", errors);
-    //         return;
-    //     }
-    // };
-    // println!(
-    //     "terminals: {:?}, states: {:?}, reductors: {:?}",
-    //     automaton.terminals.len(),
-    //     automaton.states.len(),
-    //     automaton.reductions.len()
-    // );
-    // println!("export: {:?}", automaton.export);
-    // for (i, term) in automaton.terminals.iter().enumerate() {
-    //     println!("{}. {:?}", i, term);
-    // }
-    // println!("");
-    // for (i, reductend) in automaton.reductions.iter().enumerate() {
-    //     println!("{}. {:?}", i, reductend);
-    // }
-    // println!("");
-    // for (i, state) in automaton.states.iter().enumerate() {
-    //     println!("{}. {} {:?} {:?}", i, state.position.get_string(&ast.rules), state.lookahead, state.goto);
-    // }
+    let automaton = match automaton::Automaton::new(&lr) {
+        Ok(lr)=>lr,
+        Err(errors) => {
+            println!("Error occured!");
+            println!("{:?}", errors);
+            return;
+        }
+    };
+    println!(
+        "terminals: {:?}, states: {:?}, reductors: {:?}",
+        automaton.terminals.len(),
+        automaton.states.len(),
+        automaton.reductions.len()
+    );
+    println!("export: {:?}", automaton.export);
+    for (i, term) in automaton.terminals.iter().enumerate() {
+        println!("{}. {:?}", i, term);
+    }
+    println!("");
+    for (i, reductend) in automaton.reductions.iter().enumerate() {
+        println!("{}. {:?}", i, reductend);
+    }
+    println!("");
+    for (i, state) in automaton.states.iter().enumerate() {
+        println!("{}. {} {:?} {:?}", i, state.position.get_string(&ast.rules), state.lookahead, state.goto);
+    }
 
-    // let output = reverseparse::export(&automaton);
+    let output = reverseparse::export_cpp(&automaton);
+    let mut file = match File::create("../FO/parse.cpp") {
     // let mut file = match File::create("../parser/src/main.rs") {
-    //     Err(e) => panic!("Could not open file: {:?}", e),
-    //     Ok(f) =>f
-    // };
+        Err(e) => panic!("Could not open file: {:?}", e),
+        Ok(f) =>f
+    };
 
-    // let _ = file.write_all(output.as_bytes());
+    let _ = file.write_all(output.as_bytes());
 }
